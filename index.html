@@ -160,6 +160,11 @@
   .opt.on.no{background:rgba(255,107,92,.16); border-color:var(--coral); color:var(--coral);}
   .opt.on.yes{background:rgba(56,211,159,.16); border-color:var(--green); color:var(--green);}
 
+  .hist-hint{background:rgba(255,194,75,.09); border:1px solid rgba(255,194,75,.32); border-radius:11px; padding:11px 12px; margin-bottom:17px;}
+  .hist-hint .hl{font-size:11px; font-weight:800; color:var(--amber); letter-spacing:.3px; margin-bottom:6px;}
+  .hist-hint .hv{font-size:13px; color:var(--txt-dim); line-height:1.55; white-space:pre-wrap; margin-bottom:10px;}
+  .hist-hint button{background:var(--amber); color:#1a1a1a; border:none; border-radius:8px; padding:8px 14px; font-weight:800; font-size:13px; cursor:pointer;}
+
   textarea, input[type=text], input[type=password]{
     width:100%; background:var(--surface); border:1px solid var(--line); border-radius:var(--r-sm);
     color:var(--txt); font-family:inherit; font-size:15px; padding:12px 13px; resize:vertical;
@@ -300,6 +305,11 @@
     </div>
 
     <div id="preFields">
+      <div class="hist-hint" id="histHint" style="display:none;">
+        <div class="hl" id="histLabel">지난 기록</div>
+        <div class="hv" id="histVals"></div>
+        <button onclick="applyHistory()">지난번 값 채우기</button>
+      </div>
       <div class="field">
         <label>재고</label>
         <div class="opts" id="stockOpts">
@@ -378,11 +388,18 @@
 <script>
 /* ═══════════ 상태 ═══════════ */
 let DATA = {};            // { id: visit }
+let HISTORY = {};         // { 'team|store': {stock, env, merit, respiTarget, date} }  ← 달이 바뀌어도 유지
 let curId = null;         // 편집 중 매장
+let curSuggest = null;    // 현재 매장의 지난 기록
 let curMode = 'pre';      // 'pre' | 'day'
 let photos = [];          // {dataUrl, b64, media}
 let filterDate = '전체';
 let filterTeam = '전체';
+let showPast = false;
+
+function todayKey(){ const d=new Date(); return (d.getMonth()+1)+'.'+d.getDate(); }
+function dateVal(k){ const p=(k||'').split('.').map(Number); return (p[0]||0)*100+(p[1]||0); }
+function isPast(k){ return dateVal(k) < dateVal(todayKey()); }
 
 const DEMO = `차수,구분,날짜,매장명,상태,신규/기존,요일,재고,점주,주소,지역,코드,팀,편의점
 8,점포,6월 15,동작우체국점,,,월요일,,No,서울 동작구 여의대방로22길 78,,,Q팀,GS25
@@ -403,6 +420,7 @@ const Store = {
         this.db = firebase.database();
         this.mode='cloud';
         this.db.ref('ploomVisits').on('value', s=>{ DATA = s.val()||{}; renderAll(); });
+        this.db.ref('ploomHistory').on('value', s=>{ HISTORY = s.val()||{}; });
         document.getElementById('syncBadge').textContent='클라우드 동기화';
         document.getElementById('syncBadge').classList.add('cloud');
         document.getElementById('storeModeText').innerHTML='<span class="ok">Firebase 동기화 켜짐.</span> 여러 기기에서 같은 일정을 봅니다.';
@@ -410,11 +428,16 @@ const Store = {
       }catch(e){ console.warn('Firebase init 실패, 로컬로 진행', e); }
     }
     DATA = JSON.parse(localStorage.getItem('ploomVisits')||'{}');
+    HISTORY = JSON.parse(localStorage.getItem('ploomHistory')||'{}');
     renderAll();
   },
   async save(){
     if(this.mode==='cloud'){ try{ await this.db.ref('ploomVisits').set(DATA); }catch(e){ toast('저장 실패'); } }
     else { localStorage.setItem('ploomVisits', JSON.stringify(DATA)); renderAll(); }
+  },
+  async saveHistory(){
+    if(this.mode==='cloud'){ try{ await this.db.ref('ploomHistory').set(HISTORY); }catch(e){} }
+    else { localStorage.setItem('ploomHistory', JSON.stringify(HISTORY)); }
   }
 };
 
@@ -536,13 +559,15 @@ function visits(){ return Object.values(DATA); }
 
 function renderFilters(){
   const vs=visits();
-  const dates=uniq(vs.map(v=>v.dateKey).filter(Boolean)).sort((a,b)=>{
-    const pa=a.split('.').map(Number), pb=b.split('.').map(Number);
-    return pa[0]-pb[0] || pa[1]-pb[1];
-  });
+  let dates=uniq(vs.map(v=>v.dateKey).filter(Boolean)).sort((a,b)=>dateVal(a)-dateVal(b));
+  if(!showPast) dates=dates.filter(d=>!isPast(d));
+  // 숨겨진 과거 날짜가 선택돼 있으면 전체로 되돌림
+  if(filterDate!=='전체' && !dates.includes(filterDate)) filterDate='전체';
   const teams=uniq(vs.map(v=>v.team).filter(Boolean)).sort();
+  const hasPast = uniq(vs.map(v=>v.dateKey)).some(isPast);
   const dc=document.getElementById('dateChips');
   dc.innerHTML='<span class="lbl">날짜</span>'+
+    (hasPast?`<span class="chip date ${showPast?'on':''}" onclick="togglePast()">${showPast?'지난날 ✕':'지난날'}</span>`:'')+
     chip('전체',filterDate==='전체','date','filterDate')+
     dates.map(d=>chip(d, filterDate===d,'date','filterDate')).join('');
   const tc=document.getElementById('teamChips');
@@ -550,6 +575,7 @@ function renderFilters(){
     chip('전체',filterTeam==='전체','','filterTeam')+
     teams.map(t=>chip(t, filterTeam===t,'','filterTeam')).join('');
 }
+function togglePast(){ showPast=!showPast; renderFilters(); renderStoreList(); }
 function chip(label,on,extra,target){
   return `<span class="chip ${extra} ${on?'on':''}" onclick="setFilter('${target}','${label}')">${label}</span>`;
 }
@@ -561,6 +587,7 @@ function renderStoreList(){
   const el=document.getElementById('storeList');
   let vs=visits();
   if(filterDate!=='전체') vs=vs.filter(v=>v.dateKey===filterDate);
+  else if(!showPast) vs=vs.filter(v=>!isPast(v.dateKey));
   if(filterTeam!=='전체') vs=vs.filter(v=>v.team===filterTeam);
   if(visits().length===0){
     el.innerHTML='<div class="empty"><b>아직 일정이 없어요</b>일정 탭에서 이번 달 CSV를 붙여넣거나 예시를 넣어 시작하세요.<br><button class="btn btn-primary" onclick="switchView(\'schedule\')">일정 넣으러 가기</button></div>';
@@ -637,6 +664,7 @@ function openSheet(id){
   document.getElementById('dayMemo').value=r.dayMemo||'';
   setMeritUI(r.merit);
   photos=[]; renderPhotos();
+  showHistHint(v,r);
   setMode('pre');
   document.getElementById('sheetBg').classList.add('open');
   document.getElementById('sheet').classList.add('open');
@@ -675,6 +703,34 @@ function setRespi(who){ DATA[curId].report.respiTarget=who; updateRespiUI(who); 
 function updateRespiUI(who){
   document.getElementById('respiOwner').classList.toggle('on', who!=='직원');
   document.getElementById('respiStaff').classList.toggle('on', who==='직원');
+}
+
+/* ── 지난 기록 (달이 바뀌어도 매장별로 유지) ── */
+function histKey(v){ return v.team+'|'+v.store; }
+function fmtStock(arr){ if(!arr||!arr.length) return '—'; if(arr.includes('없음')) return '없음'; return arr.map(s=>s+'1').join(', '); }
+function showHistHint(v,r){
+  const el=document.getElementById('histHint');
+  curSuggest = HISTORY[histKey(v)] || null;
+  if(!curSuggest || r.status){ el.style.display='none'; return; }   // 이번 달 이미 보고했으면 숨김
+  const s=curSuggest, parts=['재고: '+fmtStock(s.stock)];
+  if(v.type==='점포' && s.respiTarget) parts.push('리스피: '+s.respiTarget);
+  if(s.merit===true) parts.push('메리트: 있음'); else if(s.merit===false) parts.push('메리트: 없음');
+  if(s.env) parts.push('설명: '+s.env.split('\n')[0]+(s.env.includes('\n')?' …':''));
+  document.getElementById('histLabel').textContent='지난 기록'+(s.date?(' · '+s.date):'');
+  document.getElementById('histVals').textContent=parts.join('\n');
+  el.style.display='block';
+}
+function applyHistory(){
+  if(!curSuggest) return;
+  const r=DATA[curId].report, s=curSuggest;
+  if(s.stock) r.stock=[...s.stock];
+  if(s.env){ r.env=s.env; document.getElementById('envText').value=s.env; }
+  if(s.merit===true||s.merit===false) r.merit=s.merit;
+  if(s.respiTarget) r.respiTarget=s.respiTarget;
+  document.querySelectorAll('#stockOpts .opt').forEach(o=> o.classList.toggle('on',(r.stock||[]).includes(o.dataset.stock)));
+  setMeritUI(r.merit); updateRespiUI(r.respiTarget||'점주');
+  document.getElementById('histHint').style.display='none';
+  render(); toast('지난번 값 불러옴 · 확인 후 수정');
 }
 
 /* ── 보고 텍스트 생성 ── */
@@ -717,6 +773,12 @@ async function copyReport(){
   try{ await navigator.clipboard.writeText(t); }
   catch(e){ const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
   DATA[curId].report.status = curMode==='day'?'당일완료':'사전완료';
+  // 매장별 기록 저장 (다음 달 추천용)
+  const v=DATA[curId], r=v.report;
+  if((r.stock&&r.stock.length) || r.env || r.merit!==null){
+    HISTORY[histKey(v)] = { stock:[...(r.stock||[])], env:r.env||'', merit:(r.merit===undefined?null:r.merit), respiTarget:r.respiTarget||'점주', date:v.dateKey };
+    Store.saveHistory();
+  }
   Store.save();
   toast('복사됨 · 카톡에 붙여넣기');
   closeSheet();
