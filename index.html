@@ -511,13 +511,15 @@ function loadSample(){ document.getElementById('csvInput').value=DEMO; importCSV
 
 /* ── 엑셀 가져오기 (헤더 없는 원본 양식) ── */
 const BRANDS=['GS 25','GS25','CU','세븐일레븐','이마트24','이마트 24','미니스톱','씨유'];
+// 엑셀 날짜 일련번호 → UTC 자정 Date (타임존 밀림 방지: 읽을 때 getUTC* 사용)
+function serialToDate(serial){ return new Date(Math.round((serial - 25569) * 86400000)); }
 function normBrand(b){ return (b||'').replace(/\s+/g,''); }
 function importExcel(ev){
   const file=ev.target.files[0]; if(!file) return;
   const reader=new FileReader();
   reader.onload=e=>{
     try{
-      const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:true});
+      const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
       const ws=wb.Sheets[wb.SheetNames[0]];
       const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,blankrows:false});
       mapExcelRows(rows);
@@ -539,6 +541,7 @@ function mapExcelRows(rows){
     else if(teamCells.length) team=teamCells[teamCells.length-1].s; // 예외: 마지막 팀값(뎁뽀 뒤에 옴)
     for(const cell of row){
       if(cell instanceof Date){ if(!date) date=cell; continue; }
+      if(typeof cell==='number' && cell>40000 && cell<70000){ if(!date) date=serialToDate(cell); continue; }  // 엑셀 날짜 일련번호
       const s=(cell==null?'':String(cell)).trim();
       if(!s) continue;
       if(s==='점포'||s==='흡연구역') type=s;
@@ -549,7 +552,7 @@ function mapExcelRows(rows){
       else if(/^(서울|경기|인천)/.test(s) && /\s/.test(s)) addr=s;  // 주소: 공백 포함
     }
     if(!team || !store || !date) continue;
-    const dateKey=(date.getMonth()+1)+'.'+date.getDate();
+    const dateKey=(date.getUTCMonth()+1)+'.'+date.getUTCDate();
     const id='v_'+team+'_'+store+'_'+dateKey;
     next[id]={ id, team, type:type||'점포', date:dateKey, dateKey, store, dow, addr,
       brand, round, report:(DATA[id]&&DATA[id].report)?DATA[id].report:null };
