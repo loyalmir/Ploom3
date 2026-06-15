@@ -519,17 +519,22 @@ function mapExcelRows(rows){
   for(const row of rows){
     if(!row || row.length<4) continue;
     let team='',date=null,type='',brand='',store='',addr='',dow='',round='';
+    // 팀 후보 수집 (팀으로 끝나거나 #로 시작). 뎁뽀(1열)·팀(2열)이 둘 다 잡히므로 팀 열을 우선.
+    const teamCells=[];
+    row.forEach((cell,idx)=>{ const s=(cell==null?'':String(cell)).trim(); if(/팀$/.test(s)||/^#/.test(s)) teamCells.push({idx,s}); });
+    const atCol2=teamCells.find(t=>t.idx===2);
+    if(atCol2) team=atCol2.s;                                    // 표준 양식: 팀은 항상 3번째 열
+    else if(teamCells.length) team=teamCells[teamCells.length-1].s; // 예외: 마지막 팀값(뎁뽀 뒤에 옴)
     for(const cell of row){
       if(cell instanceof Date){ if(!date) date=cell; continue; }
       const s=(cell==null?'':String(cell)).trim();
       if(!s) continue;
-      if(/^[A-Za-z]+\d*팀$/.test(s)) team=s;                 // Q팀, R팀, Z1팀 (숫자만인 80팀=뎁뽀는 제외)
-      else if(s==='점포'||s==='흡연구역') type=s;
+      if(s==='점포'||s==='흡연구역') type=s;
       else if(/요일$/.test(s)) dow=s;
       else if(/^\d+일차$/.test(s)){ const m=s.match(/\d+/); round=m?m[0]:''; }
       else if(BRANDS.includes(s)) brand=normBrand(s);
-      else if(/^(서울|경기|인천)/.test(s)) addr=s;
-      else if(/점$/.test(s) && !store) store=s;               // 매장명은 '점'으로 끝
+      else if(/점$/.test(s) && !/\s/.test(s) && !store) store=s;   // 매장명: 공백 없는 '…점'
+      else if(/^(서울|경기|인천)/.test(s) && /\s/.test(s)) addr=s;  // 주소: 공백 포함
     }
     if(!team || !store || !date) continue;
     const dateKey=(date.getMonth()+1)+'.'+date.getDate();
