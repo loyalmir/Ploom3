@@ -545,7 +545,7 @@ function mapExcelRows(rows){
       else if(/요일$/.test(s)) dow=s;
       else if(/^\d+일차$/.test(s)){ const m=s.match(/\d+/); round=m?m[0]:''; }
       else if(BRANDS.includes(s)) brand=normBrand(s);
-      else if(/점$/.test(s) && !/\s/.test(s) && !store) store=s;   // 매장명: 공백 없는 '…점'
+      else if(/점/.test(s) && !/\s/.test(s) && !store) store=s.split('(')[0].trim();  // 매장명: 공백 없는 '…점' (괄호 뒤 코드 제거)
       else if(/^(서울|경기|인천)/.test(s) && /\s/.test(s)) addr=s;  // 주소: 공백 포함
     }
     if(!team || !store || !date) continue;
