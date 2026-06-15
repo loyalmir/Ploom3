@@ -73,6 +73,12 @@
   .chip.on{background:var(--blue); border-color:var(--blue); color:#fff;}
   .chip.date.on{background:var(--coral); border-color:var(--coral);}
 
+  .date-wrap{display:flex; align-items:center; gap:8px;}
+  .date-wrap #dateChips{flex:1; min-width:0; padding-bottom:8px;}
+  .past-btn{flex-shrink:0; padding:7px 12px; border-radius:20px; font-size:12px; font-weight:700; background:var(--surface); border:1px solid var(--line); color:var(--txt-dim); cursor:pointer; white-space:nowrap;}
+  .past-btn.on{background:var(--coral); border-color:var(--coral); color:#fff;}
+  .past-btn.hidden{display:none;}
+
   main{padding:8px 14px 20px; max-width:560px; margin:0 auto;}
 
   /* ── Store cards ── */
@@ -226,7 +232,10 @@
 <!-- ════════ 오늘 (보고) ════════ -->
 <section class="view on" id="view-today">
   <div class="filters">
-    <div class="filter-row" id="dateChips"><span class="lbl">날짜</span></div>
+    <div class="date-wrap">
+      <div class="filter-row" id="dateChips"><span class="lbl">날짜</span></div>
+      <button class="past-btn hidden" id="pastBtn" onclick="togglePast()">지난날</button>
+    </div>
     <div class="filter-row" id="teamChips"><span class="lbl">팀</span></div>
   </div>
   <main id="storeList"></main>
@@ -287,6 +296,7 @@
       <p>입력한 일정·보고 내용을 모두 지웁니다. (API 키는 유지)</p>
       <button class="btn btn-ghost btn-block" onclick="wipeData()">전체 일정 삭제</button>
     </div>
+    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0615</div>
   </main>
 </section>
 
@@ -572,9 +582,12 @@ function renderFilters(){
   const hasPast = uniq(vs.map(v=>v.dateKey)).some(isPast);
   const dc=document.getElementById('dateChips');
   dc.innerHTML='<span class="lbl">날짜</span>'+
-    (hasPast?`<span class="chip date ${showPast?'on':''}" onclick="togglePast()">${showPast?'지난날 ✕':'지난날'}</span>`:'')+
     chip('전체',filterDate==='전체','date','filterDate')+
     dates.map(d=>chip(d, filterDate===d,'date','filterDate')).join('');
+  const pb=document.getElementById('pastBtn');
+  pb.classList.toggle('hidden', !hasPast);
+  pb.classList.toggle('on', showPast);
+  pb.textContent = showPast?'지난날 ✕':'지난날';
   const tc=document.getElementById('teamChips');
   tc.innerHTML='<span class="lbl">팀</span>'+
     chip('전체',filterTeam==='전체','','filterTeam')+
