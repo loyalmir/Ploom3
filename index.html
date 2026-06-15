@@ -404,11 +404,12 @@ let curId = null;         // 편집 중 매장
 let curSuggest = null;    // 현재 매장의 지난 기록
 let curMode = 'pre';      // 'pre' | 'day'
 let photos = [];          // {dataUrl, b64, media}
-let filterDate = '전체';
+let filterDate = '오늘';   // '오늘'(=오늘+내일) | '전체' | 특정날짜
 let filterTeam = '전체';
 let showPast = false;
 
 function todayKey(){ const d=new Date(); return (d.getMonth()+1)+'.'+d.getDate(); }
+function tomorrowKey(){ const d=new Date(); d.setDate(d.getDate()+1); return (d.getMonth()+1)+'.'+d.getDate(); }
 function dateVal(k){ const p=(k||'').split('.').map(Number); return (p[0]||0)*100+(p[1]||0); }
 function isPast(k){ return dateVal(k) < dateVal(todayKey()); }
 
@@ -583,12 +584,13 @@ function renderFilters(){
   const vs=visits();
   let dates=uniq(vs.map(v=>v.dateKey).filter(Boolean)).sort((a,b)=>dateVal(a)-dateVal(b));
   if(!showPast) dates=dates.filter(d=>!isPast(d));
-  // 숨겨진 과거 날짜가 선택돼 있으면 전체로 되돌림
-  if(filterDate!=='전체' && !dates.includes(filterDate)) filterDate='전체';
+  // 숨겨진 과거 날짜가 선택돼 있으면 오늘+내일로 되돌림
+  if(filterDate!=='전체' && filterDate!=='오늘' && !dates.includes(filterDate)) filterDate='오늘';
   const teams=uniq(vs.map(v=>v.team).filter(Boolean)).sort(teamSort);
   const hasPast = uniq(vs.map(v=>v.dateKey)).some(isPast);
   const dc=document.getElementById('dateChips');
   dc.innerHTML='<span class="lbl">날짜</span>'+
+    `<span class="chip date ${filterDate==='오늘'?'on':''}" onclick="setFilter('filterDate','오늘')">오늘+내일</span>`+
     chip('전체',filterDate==='전체','date','filterDate')+
     dates.map(d=>chip(d, filterDate===d,'date','filterDate')).join('');
   const pb=document.getElementById('pastBtn');
@@ -610,34 +612,44 @@ function statusOf(v){ const r=v.report; if(!r||!r.status) return ''; return r.st
 
 function renderStoreList(){
   const el=document.getElementById('storeList');
+  const today=todayKey(), tmr=tomorrowKey();
   let vs=visits();
-  if(filterDate!=='전체') vs=vs.filter(v=>v.dateKey===filterDate);
+  if(filterDate==='오늘') vs=vs.filter(v=> v.dateKey===today || v.dateKey===tmr);
+  else if(filterDate!=='전체') vs=vs.filter(v=>v.dateKey===filterDate);
   else if(!showPast) vs=vs.filter(v=>!isPast(v.dateKey));
   if(filterTeam!=='전체') vs=vs.filter(v=>v.team===filterTeam);
   if(visits().length===0){
-    el.innerHTML='<div class="empty"><b>아직 일정이 없어요</b>일정 탭에서 이번 달 CSV를 붙여넣거나 예시를 넣어 시작하세요.<br><button class="btn btn-primary" onclick="switchView(\'schedule\')">일정 넣으러 가기</button></div>';
+    el.innerHTML='<div class="empty"><b>아직 일정이 없어요</b>일정 탭에서 이번 달 엑셀을 넣어 시작하세요.<br><button class="btn btn-primary" onclick="switchView(\'schedule\')">일정 넣으러 가기</button></div>';
     return;
   }
-  if(vs.length===0){ el.innerHTML='<div class="empty"><b>해당하는 매장이 없어요</b>날짜·팀 필터를 바꿔보세요.</div>'; return; }
+  if(vs.length===0){
+    const msg = filterDate==='오늘' ? '오늘·내일 일정이 없어요' : '해당하는 매장이 없어요';
+    el.innerHTML='<div class="empty"><b>'+msg+'</b>날짜·팀 필터를 바꿔보세요.</div>'; return;
+  }
   // 날짜별 그룹
   const groups={};
   vs.forEach(v=>{ (groups[v.dateKey]=groups[v.dateKey]||[]).push(v); });
-  const order=Object.keys(groups).sort((a,b)=>{const pa=a.split('.').map(Number),pb=b.split('.').map(Number);return pa[0]-pb[0]||pa[1]-pb[1];});
+  const order=Object.keys(groups).sort((a,b)=>dateVal(a)-dateVal(b));
   let html='';
   order.forEach(dk=>{
     const list=groups[dk].sort((a,b)=>teamSort(a.team,b.team));
     const dow=list[0].dow||'';
-    html+=`<div class="daygroup-title">${dk} ${dow}</div>`;
-    list.forEach(v=>{ html+=card(v); });
+    let title=`${dk} ${dow}`;
+    if(dk===today) title=`오늘 · 당일보고 — ${dk} ${dow}`;
+    else if(dk===tmr) title=`내일 · 사전방문 — ${dk} ${dow}`;
+    html+=`<div class="daygroup-title">${title}</div>`;
+    const defMode = dk===today ? 'day' : 'pre';
+    list.forEach(v=>{ html+=card(v, defMode); });
   });
   el.innerHTML=html;
 }
-function card(v){
+function card(v, defMode){
+  defMode = defMode || 'pre';
   const st=statusOf(v);
   const cls= st==='사전완료'?'s-pre': st==='당일완료'?'s-day':'';
   const pill= st==='사전완료'?'<span class="status-pill pre">사전완료</span>': st==='당일완료'?'<span class="status-pill day">당일완료</span>':'';
   const naver= v.addr? `<a href="https://map.naver.com/p/search/${encodeURIComponent(v.addr)}" target="_blank" onclick="event.stopPropagation()">길찾기 ›</a>`:'';
-  return `<div class="card ${cls}" onclick="openSheet('${v.id}')">
+  return `<div class="card ${cls}" onclick="openSheet('${v.id}','${defMode}')">
     <div class="stripe"></div>${pill}
     <div class="card-top">
       <span class="round">${v.round?('#'+v.round):''}</span>
@@ -670,7 +682,7 @@ function delVisit(e,id){ e.preventDefault(); if(confirm('이 매장을 일정에
 function esc(s){ return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 
 /* ═══════════ 편집 시트 ═══════════ */
-function openSheet(id){
+function openSheet(id, defMode){
   curId=id; const v=DATA[id]; if(!v) return;
   if(!v.report) v.report={stock:{}, respiTarget:'점주', env:'', merit:null, dayMemo:'', status:''};
   const r=v.report;
@@ -689,7 +701,7 @@ function openSheet(id){
   setMeritUI(r.merit);
   photos=[]; renderPhotos();
   showHistHint(v,r);
-  setMode('pre');
+  setMode(defMode==='day'?'day':'pre');
   document.getElementById('sheetBg').classList.add('open');
   document.getElementById('sheet').classList.add('open');
   render();
@@ -788,7 +800,10 @@ function reportText(){
   const r=v.report;
   const head=`${v.team} ${v.brand} ${v.store} - ${v.type}`;
   if(curMode==='day'){
-    let t=`${head}\n세팅 / 방문완료`;
+    const isLetterTeam=/^[A-Za-z]/.test(v.team);
+    let t = isLetterTeam
+      ? `${head}\n세팅 / 방문완료`
+      : `${head}\n방문완료 인근에서 홍보활동 하겠다고 말씀드리고 대기하다가 인사드리고 철수했습니다.`;
     if(r.dayMemo && r.dayMemo.trim()) t+=`\n\n${r.dayMemo.trim()}`;
     return t;
   }
