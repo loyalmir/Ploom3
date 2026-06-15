@@ -296,7 +296,7 @@
       <p>입력한 일정·보고 내용을 모두 지웁니다. (API 키는 유지)</p>
       <button class="btn btn-ghost btn-block" onclick="wipeData()">전체 일정 삭제</button>
     </div>
-    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0615</div>
+    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0615b</div>
   </main>
 </section>
 
@@ -327,6 +327,7 @@
           <span class="opt" data-stock="실버">실버</span>
           <span class="opt no" data-stock="없음">재고없음</span>
         </div>
+        <div class="hint">블랙·실버는 누를 때마다 1 → 2 → 0 으로 바뀝니다.</div>
       </div>
       <div class="field" id="respiField">
         <label>리스피 안내 <span style="color:var(--txt-faint); font-weight:500;">(점포 필수 · 안내 대상)</span></label>
@@ -665,16 +666,15 @@ function esc(s){ return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>'
 /* ═══════════ 편집 시트 ═══════════ */
 function openSheet(id){
   curId=id; const v=DATA[id]; if(!v) return;
-  if(!v.report) v.report={stock:[], respiTarget:'점주', env:'', merit:null, dayMemo:'', status:''};
+  if(!v.report) v.report={stock:{}, respiTarget:'점주', env:'', merit:null, dayMemo:'', status:''};
   const r=v.report;
   if(!r.respiTarget) r.respiTarget='점주';
+  r.stock=normStock(r.stock);
   document.getElementById('edName').textContent=v.store;
   document.getElementById('edMeta').textContent=`${v.team} · ${v.brand} · ${v.type} · ${v.dateKey} ${v.dow}`;
   // 재고
-  document.querySelectorAll('#stockOpts .opt').forEach(o=>{
-    o.classList.toggle('on', (r.stock||[]).includes(o.dataset.stock));
-    o.onclick=()=>toggleStock(o.dataset.stock);
-  });
+  document.querySelectorAll('#stockOpts .opt').forEach(o=>{ o.onclick=()=>toggleStock(o.dataset.stock); });
+  renderStockOpts();
   // 리스피: 점포만 노출
   document.getElementById('respiField').style.display = (v.type==='점포')?'block':'none';
   updateRespiUI(r.respiTarget);
@@ -703,14 +703,32 @@ function setMode(m){
 }
 function toggleStock(s){
   const r=DATA[curId].report;
-  r.stock=r.stock||[];
-  if(s==='없음'){ r.stock = r.stock.includes('없음')?[]:['없음']; }
-  else {
-    r.stock=r.stock.filter(x=>x!=='없음');
-    if(r.stock.includes(s)) r.stock=r.stock.filter(x=>x!==s); else r.stock.push(s);
+  if(typeof r.stock!=='object' || Array.isArray(r.stock)) r.stock=migrateStock(r.stock);
+  if(s==='없음'){
+    r.stock = r.stock.none ? {} : {none:true};
+  } else {
+    delete r.stock.none;
+    const cur=r.stock[s]||0;
+    r.stock[s] = cur===0?1 : cur===1?2 : 0;   // 0 → 1 → 2 → 없음
+    if(r.stock[s]===0) delete r.stock[s];
   }
-  document.querySelectorAll('#stockOpts .opt').forEach(o=> o.classList.toggle('on', r.stock.includes(o.dataset.stock)));
+  renderStockOpts();
   render();
+}
+function migrateStock(old){
+  // 구버전 배열(['블랙','실버'] / ['없음'])을 개수 객체로 변환
+  const o={};
+  if(Array.isArray(old)){ old.forEach(x=>{ if(x==='없음') o.none=true; else o[x]=1; }); }
+  return o;
+}
+function normStock(s){ if(!s) return {}; if(Array.isArray(s)) return migrateStock(s); return s; }
+function renderStockOpts(){
+  const r=DATA[curId].report;
+  document.querySelectorAll('#stockOpts .opt').forEach(o=>{
+    const k=o.dataset.stock;
+    if(k==='없음'){ o.classList.toggle('on', !!r.stock.none); o.textContent='재고없음'; }
+    else { const c=r.stock[k]||0; o.classList.toggle('on', c>0); o.textContent = c>0 ? (k+' '+c) : k; }
+  });
 }
 function setMerit(v){ DATA[curId].report.merit=v; setMeritUI(v); render(); }
 function setMeritUI(v){
@@ -725,7 +743,7 @@ function updateRespiUI(who){
 
 /* ── 지난 기록 (달이 바뀌어도 매장별로 유지) ── */
 function histKey(v){ return v.team+'|'+v.store; }
-function fmtStock(arr){ if(!arr||!arr.length) return '—'; if(arr.includes('없음')) return '없음'; return arr.map(s=>s+'1').join(', '); }
+function fmtStock(s){ s=normStock(s); if(s.none) return '없음'; const p=[]; ['블랙','실버'].forEach(k=>{if(s[k]>0)p.push(k+s[k]);}); return p.length?p.join(', '):'—'; }
 function showHistHint(v,r){
   const el=document.getElementById('histHint');
   curSuggest = HISTORY[histKey(v)] || null;
@@ -741,11 +759,11 @@ function showHistHint(v,r){
 function applyHistory(){
   if(!curSuggest) return;
   const r=DATA[curId].report, s=curSuggest;
-  if(s.stock) r.stock=[...s.stock];
+  if(s.stock) r.stock=JSON.parse(JSON.stringify(normStock(s.stock)));
   if(s.env){ r.env=s.env; document.getElementById('envText').value=s.env; }
   if(s.merit===true||s.merit===false) r.merit=s.merit;
   if(s.respiTarget) r.respiTarget=s.respiTarget;
-  document.querySelectorAll('#stockOpts .opt').forEach(o=> o.classList.toggle('on',(r.stock||[]).includes(o.dataset.stock)));
+  renderStockOpts();
   setMeritUI(r.merit); updateRespiUI(r.respiTarget||'점주');
   document.getElementById('histHint').style.display='none';
   render(); toast('지난번 값 불러옴 · 확인 후 수정');
@@ -753,9 +771,11 @@ function applyHistory(){
 
 /* ── 보고 텍스트 생성 ── */
 function buildStockLine(stock){
-  if(!stock||stock.length===0) return '';
-  if(stock.includes('없음')) return '없음';
-  return stock.map(s=>s+'1').join(', ');   // 블랙 → 블랙1
+  stock=normStock(stock);
+  if(stock.none) return '없음';
+  const parts=[];
+  ['블랙','실버'].forEach(k=>{ if(stock[k]>0) parts.push(k+stock[k]); });
+  return parts.join(', ');
 }
 function reportText(){
   const v=DATA[curId]; if(!v) return '';
@@ -793,8 +813,9 @@ async function copyReport(){
   DATA[curId].report.status = curMode==='day'?'당일완료':'사전완료';
   // 매장별 기록 저장 (다음 달 추천용)
   const v=DATA[curId], r=v.report;
-  if((r.stock&&r.stock.length) || r.env || r.merit!==null){
-    HISTORY[histKey(v)] = { stock:[...(r.stock||[])], env:r.env||'', merit:(r.merit===undefined?null:r.merit), respiTarget:r.respiTarget||'점주', date:v.dateKey };
+  const st=normStock(r.stock); const hasStock=Object.keys(st).length>0;
+  if(hasStock || r.env || r.merit!==null){
+    HISTORY[histKey(v)] = { stock:JSON.parse(JSON.stringify(st)), env:r.env||'', merit:(r.merit==null?null:r.merit), respiTarget:r.respiTarget||'점주', date:v.dateKey };
     Store.saveHistory();
   }
   Store.save();
