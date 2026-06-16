@@ -181,13 +181,21 @@
   textarea{min-height:92px; line-height:1.55;}
 
   .photo-row{display:flex; gap:9px; flex-wrap:wrap; margin-bottom:11px;}
-  .photo-thumb{width:64px; height:64px; border-radius:9px; object-fit:cover; border:1px solid var(--line); position:relative;}
+  .photo-thumb{width:72px; height:72px; border-radius:9px; object-fit:cover; border:1px solid var(--line); position:relative; cursor:pointer;}
   .photo-add{
-    width:64px; height:64px; border-radius:9px; border:1.5px dashed var(--line); background:var(--surface);
+    width:72px; height:72px; border-radius:9px; border:1.5px dashed var(--line); background:var(--surface);
     display:flex; align-items:center; justify-content:center; color:var(--txt-faint); font-size:24px; cursor:pointer;
   }
   .thumb-wrap{position:relative;}
-  .thumb-x{position:absolute; top:-6px; right:-6px; width:20px; height:20px; border-radius:50%; background:var(--coral); color:#fff; border:none; font-size:13px; line-height:1; cursor:pointer; font-weight:800;}
+  .thumb-x{position:absolute; top:-6px; right:-6px; width:22px; height:22px; border-radius:50%; background:var(--coral); color:#fff; border:none; font-size:14px; line-height:1; cursor:pointer; font-weight:800; z-index:2;}
+
+  .photo-viewer{position:fixed; inset:0; z-index:70; background:rgba(0,0,0,.93); display:none; align-items:center; justify-content:center;}
+  .photo-viewer.open{display:flex;}
+  .photo-viewer img{max-width:94%; max-height:80%; object-fit:contain; border-radius:8px;}
+  .pv-close{position:absolute; top:calc(14px + env(safe-area-inset-top)); right:18px; width:42px; height:42px; border-radius:50%; background:rgba(255,255,255,.16); color:#fff; border:none; font-size:24px; cursor:pointer;}
+  .pv-nav{position:absolute; top:50%; transform:translateY(-50%); width:48px; height:48px; border-radius:50%; background:rgba(255,255,255,.16); color:#fff; border:none; font-size:28px; cursor:pointer; line-height:1;}
+  .pv-prev{left:12px;} .pv-next{right:12px;}
+  .pv-count{position:absolute; bottom:calc(26px + env(safe-area-inset-bottom)); left:0; right:0; text-align:center; color:#fff; font-weight:700; font-size:14px;}
 
   /* ── Kakao preview ── */
   .preview-label{font-size:12px; font-weight:700; color:var(--txt-dim); margin:4px 0 9px; display:flex; align-items:center; gap:7px;}
@@ -298,7 +306,7 @@
       <p>입력한 일정·보고 내용을 모두 지웁니다. (API 키는 유지)</p>
       <button class="btn btn-ghost btn-block" onclick="wipeData()">전체 일정 삭제</button>
     </div>
-    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616g</div>
+    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616h</div>
   </main>
 </section>
 
@@ -393,6 +401,14 @@
     설정
   </button>
 </nav>
+
+<div class="photo-viewer" id="photoViewer" onclick="closeViewer()">
+  <button class="pv-close" onclick="closeViewer()">×</button>
+  <button class="pv-nav pv-prev" onclick="stepPhoto(event,-1)">‹</button>
+  <img id="pvImg" src="" alt="" onclick="event.stopPropagation()">
+  <button class="pv-nav pv-next" onclick="stepPhoto(event,1)">›</button>
+  <div class="pv-count" id="pvCount"></div>
+</div>
 
 <div class="toast" id="toast"></div>
 
@@ -998,12 +1014,26 @@ function renderPhotos(){
   row.querySelectorAll('.thumb-wrap').forEach(n=>n.remove());
   photos.forEach((p,i)=>{
     const w=document.createElement('div'); w.className='thumb-wrap';
-    w.innerHTML=`<img class="photo-thumb" src="${p.dataUrl}"><button class="thumb-x" onclick="rmPhoto(${i})">×</button>`;
+    w.innerHTML=`<img class="photo-thumb" src="${p.dataUrl}" onclick="viewPhoto(${i})"><button class="thumb-x" onclick="rmPhoto(${i})">×</button>`;
     row.insertBefore(w, add);
   });
   document.getElementById('analyzeBtn').disabled = photos.length===0;
 }
 function rmPhoto(i){ photos.splice(i,1); savePhotos(); renderPhotos(); }
+
+/* ── 사진 크게 보기 ── */
+let pvIndex=0;
+function viewPhoto(i){ pvIndex=i; renderViewer(); document.getElementById('photoViewer').classList.add('open'); }
+function renderViewer(){
+  if(!photos[pvIndex]){ closeViewer(); return; }
+  document.getElementById('pvImg').src=photos[pvIndex].dataUrl;
+  document.getElementById('pvCount').textContent=(pvIndex+1)+' / '+photos.length;
+  const multi=photos.length>1;
+  document.querySelector('.pv-prev').style.display=multi?'block':'none';
+  document.querySelector('.pv-next').style.display=multi?'block':'none';
+}
+function stepPhoto(e,d){ if(e) e.stopPropagation(); if(!photos.length) return; pvIndex=(pvIndex+d+photos.length)%photos.length; renderViewer(); }
+function closeViewer(){ document.getElementById('photoViewer').classList.remove('open'); }
 
 /* ═══════════ AI 사진 분석 ═══════════ */
 async function analyzePhotos(){
@@ -1078,4 +1108,3 @@ window.addEventListener('DOMContentLoaded',()=>{
 </script>
 </body>
 </html>
-
