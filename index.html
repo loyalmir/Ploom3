@@ -296,7 +296,7 @@
       <p>입력한 일정·보고 내용을 모두 지웁니다. (API 키는 유지)</p>
       <button class="btn btn-ghost btn-block" onclick="wipeData()">전체 일정 삭제</button>
     </div>
-    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616b</div>
+    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616c</div>
   </main>
 </section>
 
@@ -465,7 +465,8 @@ const Store = {
 
 /* ═══════════ 사진 임시보관 (이 폰 · 행사일 + 2일까지) ═══════════ */
 function eventTsOf(id){
-  const v=DATA[id]; if(!v||!v.dateKey) return Date.now();
+  const baseId=String(id).split('::')[0];
+  const v=DATA[baseId]; if(!v||!v.dateKey) return Date.now();
   const p=v.dateKey.split('.').map(Number); if(p.length<2) return Date.now();
   return new Date(new Date().getFullYear(), p[0]-1, p[1]).getTime();  // 행사일 자정
 }
@@ -743,8 +744,6 @@ function openSheet(id, defMode){
   document.getElementById('envText').value=r.env||'';
   document.getElementById('dayMemo').value=r.dayMemo||'';
   setMeritUI(r.merit);
-  photos = Photos.get(id).map(durl=>({dataUrl:durl, b64:durl.split(',')[1], media:'image/jpeg'}));
-  renderPhotos();
   showHistHint(v,r);
   setMode(defMode==='day'?'day':'pre');
   document.getElementById('sheetBg').classList.add('open');
@@ -756,6 +755,7 @@ function closeSheet(){
   document.getElementById('sheet').classList.remove('open');
   curId=null;
 }
+function photoKey(id, mode){ return id+'::'+mode; }
 function setMode(m){
   curMode=m;
   document.getElementById('segPre').classList.toggle('on',m==='pre');
@@ -763,6 +763,9 @@ function setMode(m){
   document.getElementById('preFields').style.display = m==='pre'?'block':'none';
   document.getElementById('dayFields').style.display = m==='day'?'block':'none';
   document.getElementById('analyzeBtn').style.display = m==='pre'?'flex':'none';
+  // 사전/당일 사진 따로 보관 → 모드에 맞는 사진 로드
+  photos = curId ? Photos.get(photoKey(curId,m)).map(durl=>({dataUrl:durl, b64:durl.split(',')[1], media:'image/jpeg'})) : [];
+  renderPhotos();
   render();
 }
 function toggleStock(s){
@@ -924,7 +927,7 @@ function addPhotos(ev){
   });
   ev.target.value='';
 }
-function savePhotos(){ if(curId) Photos.set(curId, photos.map(p=>p.dataUrl)); }
+function savePhotos(){ if(curId) Photos.set(photoKey(curId,curMode), photos.map(p=>p.dataUrl)); }
 function resizeImg(src, cb){
   const img=new Image();
   img.onload=()=>{
