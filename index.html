@@ -256,12 +256,18 @@
   <main>
     <div class="panel">
       <h3>월간 일정 가져오기 — 엑셀</h3>
-      <p>매달 받는 엑셀 파일(.xlsx)을 그대로 선택하세요. 전 팀·날짜·매장·주소를 알아서 읽어 채웁니다. 기존에 입력한 보고 내용은 같은 매장이면 그대로 유지됩니다.</p>
+      <p>매달 받는 엑셀 파일(.xlsx)을 그대로 선택하세요. 전 팀·날짜·매장·주소를 알아서 읽어 채웁니다.</p>
+      <label style="display:block; font-size:12px; font-weight:700; color:var(--txt-dim); margin-bottom:8px;">가져오기 방식</label>
+      <div class="seg" style="margin-bottom:14px;">
+        <button id="impNew" class="on" onclick="setImportMode('replace')">새로 시작</button>
+        <button id="impAdd" onclick="setImportMode('merge')">기존에 더하기</button>
+      </div>
       <label class="btn btn-primary btn-block" style="cursor:pointer;">
         엑셀 파일 선택
         <input type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,*/*" hidden onchange="importExcel(event)">
       </label>
       <div class="hint" id="importMsg"></div>
+      <div class="hint"><b>새로 시작</b>: 기존 일정을 비우고 이 파일로 채움 (다음 달 새 파일 받을 때). <b>기존에 더하기</b>: 지금 일정에 이어붙임 (A팀·B팀 같이 볼 때). 어느 쪽이든 매장별 재고·설명 기록은 계속 남습니다.</div>
     </div>
     <div class="panel">
       <h3>또는 CSV 붙여넣기</h3>
@@ -306,7 +312,7 @@
       <p>입력한 일정·보고 내용을 모두 지웁니다. (API 키는 유지)</p>
       <button class="btn btn-ghost btn-block" onclick="wipeData()">전체 일정 삭제</button>
     </div>
-    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616h</div>
+    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616i</div>
   </main>
 </section>
 
@@ -429,6 +435,12 @@ let photos = [];          // {dataUrl, b64, media}
 let filterDate = '오늘';   // '오늘'(=오늘+내일) | '전체' | 특정날짜
 let filterTeam = '전체';
 let showPast = false;
+let importMode = 'replace';   // 'replace' | 'merge'
+function setImportMode(m){
+  importMode=m;
+  document.getElementById('impNew').classList.toggle('on', m==='replace');
+  document.getElementById('impAdd').classList.toggle('on', m==='merge');
+}
 
 function todayKey(){ const d=new Date(); return (d.getMonth()+1)+'.'+d.getDate(); }
 function tomorrowKey(){ const d=new Date(); d.setDate(d.getDate()+1); return (d.getMonth()+1)+'.'+d.getDate(); }
@@ -571,7 +583,8 @@ function importCSVText(text, silent){
     team:col(h,['팀']), brand:col(h,['편의점']), stock:col(h,['재고'])
   };
   if(ci.store<0 || ci.team<0){ if(!silent) document.getElementById('importMsg').innerHTML='<span class="warn">매장명/팀 열을 못 찾았어요. 헤더 줄까지 같이 붙여넣었는지 확인해 주세요.</span>'; return; }
-  const next={}; let n=0;
+  const next = (importMode==='merge') ? Object.assign({}, DATA) : {};
+  let n=0;
   for(let r=1;r<rows.length;r++){
     const row=rows[r];
     const store=(row[ci.store]||'').trim();
@@ -622,7 +635,8 @@ function importExcel(ev){
   ev.target.value='';
 }
 function mapExcelRows(rows){
-  const next={}; let n=0;
+  const next = (importMode==='merge') ? Object.assign({}, DATA) : {};
+  let n=0;
   for(const row of rows){
     if(!row || row.length<4) continue;
     let team='',date=null,type='',brand='',store='',addr='',dow='',round='';
@@ -653,8 +667,9 @@ function mapExcelRows(rows){
   }
   if(n===0){ document.getElementById('importMsg').innerHTML='<span class="warn">매장을 못 찾았어요. 다른 시트이거나 양식이 다를 수 있어요 — 파일 한 번 보내주면 맞춰드릴게요.</span>'; return; }
   DATA=next; Store.save();
-  document.getElementById('importMsg').innerHTML='<span class="ok">'+n+'개 매장 일정을 채웠어요.</span>';
-  toast(n+'개 일정 채움'); switchView('today');
+  const total=Object.keys(DATA).length;
+  document.getElementById('importMsg').innerHTML='<span class="ok">'+n+'개 매장을 '+(importMode==='merge'?('더했어요 (전체 '+total+'곳)'):'채웠어요')+'.</span>';
+  toast((importMode==='merge'?'+':'')+n+'개 일정'); switchView('today');
 }
 
 function normDate(raw){ // "6월 17" → "6.17"
