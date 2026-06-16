@@ -92,6 +92,7 @@
   .card .stripe{position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--line);}
   .card.s-pre .stripe{background:var(--amber);}
   .card.s-day .stripe{background:var(--green);}
+  .card.s-draft .stripe{background:var(--blue);}
   .card-top{display:flex; align-items:baseline; gap:8px; margin-bottom:5px;}
   .card .round{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--txt-faint); font-weight:700;}
   .card .name{font-size:16px; font-weight:800; letter-spacing:-.3px;}
@@ -104,6 +105,7 @@
   .status-pill{position:absolute; top:13px; right:13px; font-size:10.5px; font-weight:800; padding:3px 8px; border-radius:20px;}
   .status-pill.pre{background:rgba(255,194,75,.16); color:var(--amber);}
   .status-pill.day{background:rgba(56,211,159,.16); color:var(--green);}
+  .status-pill.draft{background:rgba(74,140,255,.16); color:var(--blue);}
 
   .empty{text-align:center; padding:50px 20px; color:var(--txt-faint);}
   .empty b{display:block; color:var(--txt-dim); font-size:15px; margin-bottom:6px;}
@@ -296,7 +298,7 @@
       <p>입력한 일정·보고 내용을 모두 지웁니다. (API 키는 유지)</p>
       <button class="btn btn-ghost btn-block" onclick="wipeData()">전체 일정 삭제</button>
     </div>
-    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616c</div>
+    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616d</div>
   </main>
 </section>
 
@@ -370,8 +372,9 @@
   </div>
   <div class="sheet-foot">
     <button class="btn btn-ghost" onclick="closeSheet()">닫기</button>
+    <button class="btn btn-ghost" onclick="saveDraft()">저장</button>
     <button class="btn btn-ghost" onclick="copyReport()">복사</button>
-    <button class="btn btn-kakao" style="flex:2;" onclick="shareReport()">공유하고 완료</button>
+    <button class="btn btn-kakao" style="flex:1.5;" onclick="shareReport()">공유</button>
   </div>
 </div>
 
@@ -691,8 +694,8 @@ function renderStoreList(){
 function card(v, defMode){
   defMode = defMode || 'pre';
   const st=statusOf(v);
-  const cls= st==='사전완료'?'s-pre': st==='당일완료'?'s-day':'';
-  const pill= st==='사전완료'?'<span class="status-pill pre">사전완료</span>': st==='당일완료'?'<span class="status-pill day">당일완료</span>':'';
+  const cls= st==='사전완료'?'s-pre': st==='당일완료'?'s-day': st==='작성중'?'s-draft':'';
+  const pill= st==='사전완료'?'<span class="status-pill pre">사전완료</span>': st==='당일완료'?'<span class="status-pill day">당일완료</span>': st==='작성중'?'<span class="status-pill draft">작성중</span>':'';
   const naver= v.addr? `<a href="https://map.naver.com/p/search/${encodeURIComponent(v.addr)}" target="_blank" onclick="event.stopPropagation()">길찾기 ›</a>`:'';
   return `<div class="card ${cls}" onclick="openSheet('${v.id}','${defMode}')">
     <div class="stripe"></div>${pill}
@@ -751,9 +754,19 @@ function openSheet(id, defMode){
   render();
 }
 function closeSheet(){
+  if(curId && DATA[curId]){ render(); Store.save(); }   // 입력 내용 보존 (공유 안 해도 안 사라짐)
   document.getElementById('sheetBg').classList.remove('open');
   document.getElementById('sheet').classList.remove('open');
   curId=null;
+}
+function saveDraft(){
+  if(!curId) return;
+  render();
+  const r=DATA[curId].report;
+  if(!r.status) r.status='작성중';   // 완료된 건 그대로 두고, 아직이면 '작성중' 표시
+  Store.save();
+  toast('저장됨');
+  closeSheet();
 }
 function photoKey(id, mode){ return id+'::'+mode; }
 function setMode(m){
