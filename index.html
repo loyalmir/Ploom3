@@ -296,7 +296,7 @@
       <p>입력한 일정·보고 내용을 모두 지웁니다. (API 키는 유지)</p>
       <button class="btn btn-ghost btn-block" onclick="wipeData()">전체 일정 삭제</button>
     </div>
-    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616</div>
+    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616b</div>
   </main>
 </section>
 
@@ -337,14 +337,6 @@
         </div>
       </div>
       <div class="field">
-        <label>현장 사진</label>
-        <div class="photo-row" id="photoRow">
-          <label class="photo-add">+<input type="file" accept="image/*" multiple hidden id="photoInput" onchange="addPhotos(event)"></label>
-        </div>
-        <button class="btn btn-primary btn-block" id="analyzeBtn" onclick="analyzePhotos()">사진으로 환경 설명 만들기</button>
-        <div class="hint">사진은 이 폰에 3일간 보관되고, 아래 <b>공유하고 완료</b>를 누르면 텍스트와 함께 카톡으로 전송돼요.</div>
-      </div>
-      <div class="field">
         <label>환경 설명 <span style="color:var(--txt-faint); font-weight:500;">(AI 초안 · 직접 수정 가능)</span></label>
         <textarea id="envText" placeholder="예) 인근 주택 상가 복합지역입니다.&#10;유동인구 많습니다.&#10;흡연구역 따로 없습니다." oninput="render()"></textarea>
       </div>
@@ -362,6 +354,15 @@
         <label>메모 <span style="color:var(--txt-faint); font-weight:500;">(선택)</span></label>
         <textarea id="dayMemo" placeholder="특이사항 있으면 한 줄. 없으면 비워두세요." oninput="render()"></textarea>
       </div>
+    </div>
+
+    <div class="field" id="photoField">
+      <label>현장 사진</label>
+      <div class="photo-row" id="photoRow">
+        <label class="photo-add">+<input type="file" accept="image/*" multiple hidden id="photoInput" onchange="addPhotos(event)"></label>
+      </div>
+      <button class="btn btn-primary btn-block" id="analyzeBtn" onclick="analyzePhotos()">사진으로 환경 설명 만들기</button>
+      <div class="hint">사진은 이 폰에 행사일+2일까지 보관되고, 아래 <b>공유하고 완료</b>를 누르면 텍스트와 함께 카톡으로 전송돼요.</div>
     </div>
 
     <div class="preview-label"><span class="live"></span>카톡에 붙일 내용</div>
@@ -462,20 +463,25 @@ const Store = {
   }
 };
 
-/* ═══════════ 사진 임시보관 (이 폰에 3일치만) ═══════════ */
-const PHOTO_TTL = 3*24*60*60*1000;  // 3일
+/* ═══════════ 사진 임시보관 (이 폰 · 행사일 + 2일까지) ═══════════ */
+function eventTsOf(id){
+  const v=DATA[id]; if(!v||!v.dateKey) return Date.now();
+  const p=v.dateKey.split('.').map(Number); if(p.length<2) return Date.now();
+  return new Date(new Date().getFullYear(), p[0]-1, p[1]).getTime();  // 행사일 자정
+}
 const Photos = {
   data:{},
   load(){ try{ this.data=JSON.parse(localStorage.getItem('ploomPhotos')||'{}'); }catch(e){ this.data={}; } this.purge(); },
-  purge(){ const cut=Date.now()-PHOTO_TTL; let ch=false;
-    for(const id in this.data){ if(!this.data[id] || this.data[id].ts<cut){ delete this.data[id]; ch=true; } }
+  purge(){ const now=Date.now(); let ch=false;   // 행사일 + 2일이 지나면 삭제 (= D+3 00:00부터)
+    for(const id in this.data){ const ev=(this.data[id]&&this.data[id].ev!=null)?this.data[id].ev:0;
+      if(!this.data[id] || (ev + 3*24*60*60*1000) <= now){ delete this.data[id]; ch=true; } }
     if(ch) this.persist(); },
   persist(){ try{ localStorage.setItem('ploomPhotos', JSON.stringify(this.data)); return true; }catch(e){ return false; } },
   get(id){ return (this.data[id]&&this.data[id].imgs)? this.data[id].imgs.slice():[]; },
   set(id, imgs){
-    if(imgs && imgs.length) this.data[id]={ts:Date.now(), imgs}; else delete this.data[id];
-    if(!this.persist()){  // 용량 초과 시 오래된 사진부터 비우고 재시도
-      const ids=Object.keys(this.data).filter(k=>k!==id).sort((a,b)=>this.data[a].ts-this.data[b].ts);
+    if(imgs && imgs.length) this.data[id]={ev:eventTsOf(id), imgs}; else delete this.data[id];
+    if(!this.persist()){  // 용량 초과 시 행사일 오래된 것부터 비우고 재시도
+      const ids=Object.keys(this.data).filter(k=>k!==id).sort((a,b)=>(this.data[a].ev||0)-(this.data[b].ev||0));
       while(ids.length && !this.persist()){ delete this.data[ids.shift()]; }
       toast('저장공간이 부족해 오래된 사진을 비웠어요');
     }
@@ -756,6 +762,7 @@ function setMode(m){
   document.getElementById('segDay').classList.toggle('on',m==='day');
   document.getElementById('preFields').style.display = m==='pre'?'block':'none';
   document.getElementById('dayFields').style.display = m==='day'?'block':'none';
+  document.getElementById('analyzeBtn').style.display = m==='pre'?'flex':'none';
   render();
 }
 function toggleStock(s){
