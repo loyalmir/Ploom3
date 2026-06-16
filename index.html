@@ -296,7 +296,7 @@
       <p>입력한 일정·보고 내용을 모두 지웁니다. (API 키는 유지)</p>
       <button class="btn btn-ghost btn-block" onclick="wipeData()">전체 일정 삭제</button>
     </div>
-    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0615b</div>
+    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616</div>
   </main>
 </section>
 
@@ -342,6 +342,7 @@
           <label class="photo-add">+<input type="file" accept="image/*" multiple hidden id="photoInput" onchange="addPhotos(event)"></label>
         </div>
         <button class="btn btn-primary btn-block" id="analyzeBtn" onclick="analyzePhotos()">사진으로 환경 설명 만들기</button>
+        <div class="hint">사진은 이 폰에 3일간 보관되고, 아래 <b>공유하고 완료</b>를 누르면 텍스트와 함께 카톡으로 전송돼요.</div>
       </div>
       <div class="field">
         <label>환경 설명 <span style="color:var(--txt-faint); font-weight:500;">(AI 초안 · 직접 수정 가능)</span></label>
@@ -368,7 +369,8 @@
   </div>
   <div class="sheet-foot">
     <button class="btn btn-ghost" onclick="closeSheet()">닫기</button>
-    <button class="btn btn-kakao" style="flex:2;" onclick="copyReport()">복사하고 완료</button>
+    <button class="btn btn-ghost" onclick="copyReport()">복사</button>
+    <button class="btn btn-kakao" style="flex:2;" onclick="shareReport()">공유하고 완료</button>
   </div>
 </div>
 
@@ -460,7 +462,33 @@ const Store = {
   }
 };
 
-/* ═══════════ CSV 가져오기 ═══════════ */
+/* ═══════════ 사진 임시보관 (이 폰에 3일치만) ═══════════ */
+const PHOTO_TTL = 3*24*60*60*1000;  // 3일
+const Photos = {
+  data:{},
+  load(){ try{ this.data=JSON.parse(localStorage.getItem('ploomPhotos')||'{}'); }catch(e){ this.data={}; } this.purge(); },
+  purge(){ const cut=Date.now()-PHOTO_TTL; let ch=false;
+    for(const id in this.data){ if(!this.data[id] || this.data[id].ts<cut){ delete this.data[id]; ch=true; } }
+    if(ch) this.persist(); },
+  persist(){ try{ localStorage.setItem('ploomPhotos', JSON.stringify(this.data)); return true; }catch(e){ return false; } },
+  get(id){ return (this.data[id]&&this.data[id].imgs)? this.data[id].imgs.slice():[]; },
+  set(id, imgs){
+    if(imgs && imgs.length) this.data[id]={ts:Date.now(), imgs}; else delete this.data[id];
+    if(!this.persist()){  // 용량 초과 시 오래된 사진부터 비우고 재시도
+      const ids=Object.keys(this.data).filter(k=>k!==id).sort((a,b)=>this.data[a].ts-this.data[b].ts);
+      while(ids.length && !this.persist()){ delete this.data[ids.shift()]; }
+      toast('저장공간이 부족해 오래된 사진을 비웠어요');
+    }
+  }
+};
+function dataURLtoFile(durl, name){
+  try{
+    const [head,data]=durl.split(','); const mime=(head.match(/:(.*?);/)||[])[1]||'image/jpeg';
+    const bin=atob(data); const u8=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
+    return new File([u8], name, {type:mime});
+  }catch(e){ return null; }
+}
 function parseCSV(text){
   // 따옴표 안 쉼표까지 처리하는 간단 파서
   const rows=[]; const lines=text.replace(/\r/g,'').split('\n').filter(l=>l.trim()!=='');
@@ -709,7 +737,8 @@ function openSheet(id, defMode){
   document.getElementById('envText').value=r.env||'';
   document.getElementById('dayMemo').value=r.dayMemo||'';
   setMeritUI(r.merit);
-  photos=[]; renderPhotos();
+  photos = Photos.get(id).map(durl=>({dataUrl:durl, b64:durl.split(',')[1], media:'image/jpeg'}));
+  renderPhotos();
   showHistHint(v,r);
   setMode(defMode==='day'?'day':'pre');
   document.getElementById('sheetBg').classList.add('open');
@@ -836,13 +865,9 @@ function render(){
   document.getElementById('preview').textContent= t || '—';
 }
 
-/* ── 복사 + 완료 ── */
-async function copyReport(){
-  const t=reportText();
-  try{ await navigator.clipboard.writeText(t); }
-  catch(e){ const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+/* ── 완료 처리 (상태 + 기록 저장) ── */
+function finalizeReport(){
   DATA[curId].report.status = curMode==='day'?'당일완료':'사전완료';
-  // 매장별 기록 저장 (다음 달 추천용)
   const v=DATA[curId], r=v.report;
   const st=normStock(r.stock); const hasStock=Object.keys(st).length>0;
   if(hasStock || r.env || r.merit!==null){
@@ -850,7 +875,35 @@ async function copyReport(){
     Store.saveHistory();
   }
   Store.save();
+}
+/* ── 복사 (텍스트만) ── */
+async function copyReport(){
+  const t=reportText();
+  try{ await navigator.clipboard.writeText(t); }
+  catch(e){ const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+  finalizeReport();
   toast('복사됨 · 카톡에 붙여넣기');
+  closeSheet();
+}
+/* ── 공유 (텍스트 + 사진 한 번에) ── */
+async function shareReport(){
+  const t=reportText();
+  const files = photos.map((p,i)=>dataURLtoFile(p.dataUrl, `${DATA[curId].store}_${i+1}.jpg`)).filter(Boolean);
+  let sent=false;
+  try{
+    if(navigator.canShare && files.length && navigator.canShare({files})){
+      await navigator.share({ text:t, files }); sent=true;
+    } else if(navigator.share){
+      await navigator.share({ text:t }); sent=true;
+    }
+  }catch(e){ if(e && e.name==='AbortError') return; }  // 사용자가 취소하면 완료 처리 안 함
+  if(!sent){
+    try{ await navigator.clipboard.writeText(t); }catch(e){}
+    toast(files.length? '이 기기는 사진 동시전송 미지원 · 텍스트 복사됨':'공유 미지원 · 텍스트 복사됨');
+  }else if(files.length===0){
+    toast('사진 없이 텍스트만 공유됨');
+  }
+  finalizeReport();
   closeSheet();
 }
 
@@ -859,19 +912,20 @@ function addPhotos(ev){
   const files=[...ev.target.files];
   files.forEach(f=>{
     const reader=new FileReader();
-    reader.onload=e=>{ resizeImg(e.target.result, (dataUrl,b64)=>{ photos.push({dataUrl,b64,media:'image/jpeg'}); renderPhotos(); }); };
+    reader.onload=e=>{ resizeImg(e.target.result, (dataUrl,b64)=>{ photos.push({dataUrl,b64,media:'image/jpeg'}); savePhotos(); renderPhotos(); }); };
     reader.readAsDataURL(f);
   });
   ev.target.value='';
 }
+function savePhotos(){ if(curId) Photos.set(curId, photos.map(p=>p.dataUrl)); }
 function resizeImg(src, cb){
   const img=new Image();
   img.onload=()=>{
-    const max=1024; let {width:w,height:h}=img;
+    const max=1000; let {width:w,height:h}=img;
     if(w>h && w>max){ h=h*max/w; w=max; } else if(h>=w && h>max){ w=w*max/h; h=max; }
     const c=document.createElement('canvas'); c.width=w; c.height=h;
     c.getContext('2d').drawImage(img,0,0,w,h);
-    const dataUrl=c.toDataURL('image/jpeg',0.7);
+    const dataUrl=c.toDataURL('image/jpeg',0.6);
     cb(dataUrl, dataUrl.split(',')[1]);
   };
   img.src=src;
@@ -887,7 +941,7 @@ function renderPhotos(){
   });
   document.getElementById('analyzeBtn').disabled = photos.length===0;
 }
-function rmPhoto(i){ photos.splice(i,1); renderPhotos(); }
+function rmPhoto(i){ photos.splice(i,1); savePhotos(); renderPhotos(); }
 
 /* ═══════════ AI 사진 분석 ═══════════ */
 async function analyzePhotos(){
@@ -956,6 +1010,7 @@ function toast(msg){
 window.addEventListener('DOMContentLoaded',()=>{
   const k=localStorage.getItem('ploomApiKey'); if(k) document.getElementById('apiKey').value=k;
   const m=localStorage.getItem('ploomModel'); if(m) document.getElementById('modelSel').value=m;
+  Photos.load();   // 3일 지난 사진 자동 정리
   Store.init();
 });
 </script>
