@@ -298,7 +298,7 @@
       <p>입력한 일정·보고 내용을 모두 지웁니다. (API 키는 유지)</p>
       <button class="btn btn-ghost btn-block" onclick="wipeData()">전체 일정 삭제</button>
     </div>
-    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616d</div>
+    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616e</div>
   </main>
 </section>
 
@@ -474,21 +474,49 @@ function eventTsOf(id){
   return new Date(new Date().getFullYear(), p[0]-1, p[1]).getTime();  // 행사일 자정
 }
 const Photos = {
-  data:{},
-  load(){ try{ this.data=JSON.parse(localStorage.getItem('ploomPhotos')||'{}'); }catch(e){ this.data={}; } this.purge(); },
-  purge(){ const now=Date.now(); let ch=false;   // 행사일 + 2일이 지나면 삭제 (= D+3 00:00부터)
-    for(const id in this.data){ const ev=(this.data[id]&&this.data[id].ev!=null)?this.data[id].ev:0;
-      if(!this.data[id] || (ev + 3*24*60*60*1000) <= now){ delete this.data[id]; ch=true; } }
-    if(ch) this.persist(); },
-  persist(){ try{ localStorage.setItem('ploomPhotos', JSON.stringify(this.data)); return true; }catch(e){ return false; } },
-  get(id){ return (this.data[id]&&this.data[id].imgs)? this.data[id].imgs.slice():[]; },
-  set(id, imgs){
-    if(imgs && imgs.length) this.data[id]={ev:eventTsOf(id), imgs}; else delete this.data[id];
-    if(!this.persist()){  // 용량 초과 시 행사일 오래된 것부터 비우고 재시도
-      const ids=Object.keys(this.data).filter(k=>k!==id).sort((a,b)=>(this.data[a].ev||0)-(this.data[b].ev||0));
-      while(ids.length && !this.persist()){ delete this.data[ids.shift()]; }
-      toast('저장공간이 부족해 오래된 사진을 비웠어요');
-    }
+  db:null,
+  open(){
+    return new Promise((res,rej)=>{
+      if(this.db) return res(this.db);
+      const req=indexedDB.open('ploomPhotosDB',1);
+      req.onupgradeneeded=e=>{ const db=e.target.result; if(!db.objectStoreNames.contains('photos')) db.createObjectStore('photos',{keyPath:'key'}); };
+      req.onsuccess=e=>{ this.db=e.target.result; res(this.db); };
+      req.onerror=e=>rej(e);
+    });
+  },
+  _os(mode){ return this.db.transaction('photos',mode).objectStore('photos'); },
+  async load(){ try{ await this.open(); await this._migrate(); await this.purge(); }catch(e){ console.warn('사진 저장소 열기 실패',e); } },
+  async _migrate(){   // 기존 localStorage 사진 → IndexedDB 1회 이전
+    let old; try{ old=JSON.parse(localStorage.getItem('ploomPhotos')||'null'); }catch(e){ return; }
+    if(!old) return;
+    await new Promise(res=>{ const os=this._os('readwrite');
+      for(const key in old){ const rec=old[key]; if(rec&&rec.imgs&&rec.imgs.length) os.put({key, ev:(rec.ev!=null?rec.ev:(rec.ts!=null?rec.ts:Date.now())), imgs:rec.imgs}); }
+      os.transaction.oncomplete=res; os.transaction.onerror=res;
+    });
+    localStorage.removeItem('ploomPhotos');
+  },
+  async purge(){   // 행사일 + 2일 지나면 삭제 (D+3 00:00부터)
+    const now=Date.now();
+    return new Promise(res=>{ const req=this._os('readwrite').openCursor();
+      req.onsuccess=e=>{ const cur=e.target.result; if(!cur){ res(); return; }
+        const v=cur.value, ev=(v&&v.ev!=null)?v.ev:0;
+        if((ev+3*24*60*60*1000)<=now) cur.delete();
+        cur.continue();
+      };
+      req.onerror=res;
+    });
+  },
+  async get(key){
+    try{ await this.open(); }catch(e){ return []; }
+    return new Promise(res=>{ const r=this._os('readonly').get(key);
+      r.onsuccess=()=>res((r.result&&r.result.imgs)?r.result.imgs:[]); r.onerror=()=>res([]); });
+  },
+  async set(key, imgs){
+    try{ await this.open(); }catch(e){ return; }
+    return new Promise(res=>{ const os=this._os('readwrite');
+      if(imgs&&imgs.length) os.put({key, ev:eventTsOf(key), imgs}); else os.delete(key);
+      os.transaction.oncomplete=res; os.transaction.onerror=res;
+    });
   }
 };
 function dataURLtoFile(durl, name){
@@ -777,8 +805,15 @@ function setMode(m){
   document.getElementById('dayFields').style.display = m==='day'?'block':'none';
   document.getElementById('analyzeBtn').style.display = m==='pre'?'flex':'none';
   // 사전/당일 사진 따로 보관 → 모드에 맞는 사진 로드
-  photos = curId ? Photos.get(photoKey(curId,m)).map(durl=>({dataUrl:durl, b64:durl.split(',')[1], media:'image/jpeg'})) : [];
-  renderPhotos();
+  // 사전/당일 사진 따로 보관 → 모드에 맞는 사진 비동기 로드
+  photos=[]; renderPhotos();
+  if(curId){ const id=curId, mm=m;
+    Photos.get(photoKey(id,mm)).then(durls=>{
+      if(curId!==id || curMode!==mm) return;   // 그새 다른 곳 열면 무시
+      photos=durls.map(durl=>({dataUrl:durl, b64:durl.split(',')[1], media:'image/jpeg'}));
+      renderPhotos();
+    });
+  }
   render();
 }
 function toggleStock(s){
