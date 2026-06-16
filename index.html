@@ -411,6 +411,13 @@ let showPast = false;
 function todayKey(){ const d=new Date(); return (d.getMonth()+1)+'.'+d.getDate(); }
 function tomorrowKey(){ const d=new Date(); d.setDate(d.getDate()+1); return (d.getMonth()+1)+'.'+d.getDate(); }
 function dateVal(k){ const p=(k||'').split('.').map(Number); return (p[0]||0)*100+(p[1]||0); }
+function prevDateKey(k){  // 사전방문 = 행사일 하루 전
+  const p=(k||'').split('.').map(Number);
+  if(p.length<2 || !p[0]) return k;
+  const d=new Date(Date.UTC(new Date().getFullYear(), p[0]-1, p[1]));
+  d.setUTCDate(d.getUTCDate()-1);
+  return (d.getUTCMonth()+1)+'.'+d.getUTCDate();
+}
 function isPast(k){ return dateVal(k) < dateVal(todayKey()); }
 
 const DEMO = `차수,구분,날짜,매장명,상태,신규/기존,요일,재고,점주,주소,지역,코드,팀,편의점
@@ -814,7 +821,7 @@ function reportText(){
   const stockLine=buildStockLine(r.stock);
   let stock = stockLine? `재고 - ${stockLine}` : '재고 - ';
   if(v.type==='점포'){ stock += ` / 리스피 안내 ${r.respiTarget||'점주'} v`; }
-  let body=`${v.dateKey} 사전방문\n\n${head}\n${stock}`;
+  let body=`${prevDateKey(v.dateKey)} 사전방문\n\n${head}\n${stock}`;
   if(r.env && r.env.trim()) body+=`\n\n${r.env.trim()}`;
   if(r.merit===true) body+=`\n\n세일즈 메리트 있습니다.`;
   else if(r.merit===false) body+=`\n\n세일즈 메리트 없습니다.`;
