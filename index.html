@@ -242,6 +242,7 @@
 <!-- ════════ 오늘 (보고) ════════ -->
 <section class="view on" id="view-today">
   <div class="filters">
+    <div class="filter-row" id="groupChips" style="display:none;"><span class="lbl">조</span></div>
     <div class="date-wrap">
       <div class="filter-row" id="dateChips"><span class="lbl">날짜</span></div>
       <button class="past-btn hidden" id="pastBtn" onclick="togglePast()">지난날</button>
@@ -258,10 +259,11 @@
       <h3>월간 일정 가져오기 — 엑셀</h3>
       <p>매달 받는 엑셀 파일(.xlsx)을 그대로 선택하세요. 전 팀·날짜·매장·주소를 알아서 읽어 채웁니다.</p>
       <label style="display:block; font-size:12px; font-weight:700; color:var(--txt-dim); margin-bottom:8px;">가져오기 방식</label>
-      <div class="seg" style="margin-bottom:14px;">
+      <div class="seg" style="margin-bottom:12px;">
         <button id="impNew" class="on" onclick="setImportMode('replace')">새로 시작</button>
         <button id="impAdd" onclick="setImportMode('merge')">기존에 더하기</button>
       </div>
+      <input type="text" id="impGroup" placeholder="조 이름 (선택 · 예: A조)" style="margin-bottom:14px;">
       <label class="btn btn-primary btn-block" style="cursor:pointer;">
         엑셀 파일 선택
         <input type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,*/*" hidden onchange="importExcel(event)">
@@ -312,7 +314,7 @@
       <p>입력한 일정·보고 내용을 모두 지웁니다. (API 키는 유지)</p>
       <button class="btn btn-ghost btn-block" onclick="wipeData()">전체 일정 삭제</button>
     </div>
-    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616i</div>
+    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616j</div>
   </main>
 </section>
 
@@ -434,6 +436,7 @@ let curMode = 'pre';      // 'pre' | 'day'
 let photos = [];          // {dataUrl, b64, media}
 let filterDate = '오늘';   // '오늘'(=오늘+내일) | '전체' | 특정날짜
 let filterTeam = '전체';
+let filterGroup = '전체';
 let showPast = false;
 let importMode = 'replace';   // 'replace' | 'merge'
 function setImportMode(m){
@@ -600,6 +603,7 @@ function importCSVText(text, silent){
       addr:(ci.addr>=0?row[ci.addr]:'').trim(),
       brand:normBrand((ci.brand>=0?row[ci.brand]:'').trim()),
       round:(ci.round>=0?row[ci.round]:'').trim(),
+      group:(document.getElementById('impGroup').value||'').trim(),
       report:(DATA[id] && DATA[id].report) ? DATA[id].report : null
     };
     n++;
@@ -662,7 +666,7 @@ function mapExcelRows(rows){
     const dateKey=(date.getUTCMonth()+1)+'.'+date.getUTCDate();
     const id='v_'+team+'_'+store+'_'+dateKey;
     next[id]={ id, team, type:type||'점포', date:dateKey, dateKey, store, dow, addr,
-      brand, round, report:(DATA[id]&&DATA[id].report)?DATA[id].report:null };
+      brand, round, group:(document.getElementById('impGroup').value||'').trim(), report:(DATA[id]&&DATA[id].report)?DATA[id].report:null };
     n++;
   }
   if(n===0){ document.getElementById('importMsg').innerHTML='<span class="warn">매장을 못 찾았어요. 다른 시트이거나 양식이 다를 수 있어요 — 파일 한 번 보내주면 맞춰드릴게요.</span>'; return; }
@@ -692,10 +696,20 @@ function teamSort(a,b){
 }
 
 function renderFilters(){
-  const vs=visits();
+  const vsAll=visits();
+  // 조(그룹) 칩 — 조가 붙은 일정이 있을 때만 표시
+  const grps=uniq(vsAll.map(v=>v.group).filter(Boolean)).sort();
+  const gc=document.getElementById('groupChips');
+  if(grps.length){
+    if(filterGroup!=='전체' && !grps.includes(filterGroup)) filterGroup='전체';
+    gc.style.display='flex';
+    gc.innerHTML='<span class="lbl">조</span>'+chip('전체',filterGroup==='전체','','filterGroup')+
+      grps.map(g=>chip(g, filterGroup===g,'','filterGroup')).join('');
+  } else { gc.style.display='none'; filterGroup='전체'; }
+  // 조 선택 시 그 조의 일정만 기준으로 날짜·팀 칩 구성
+  const vs = (filterGroup!=='전체') ? vsAll.filter(v=>(v.group||'')===filterGroup) : vsAll;
   let dates=uniq(vs.map(v=>v.dateKey).filter(Boolean)).sort((a,b)=>dateVal(a)-dateVal(b));
   if(!showPast) dates=dates.filter(d=>!isPast(d));
-  // 숨겨진 과거 날짜가 선택돼 있으면 오늘+내일로 되돌림
   if(filterDate!=='전체' && filterDate!=='오늘' && !dates.includes(filterDate)) filterDate='오늘';
   const teams=uniq(vs.map(v=>v.team).filter(Boolean)).sort(teamSort);
   const hasPast = uniq(vs.map(v=>v.dateKey)).some(isPast);
@@ -717,7 +731,12 @@ function togglePast(){ showPast=!showPast; renderFilters(); renderStoreList(); }
 function chip(label,on,extra,target){
   return `<span class="chip ${extra} ${on?'on':''}" onclick="setFilter('${target}','${label}')">${label}</span>`;
 }
-function setFilter(target,val){ if(target==='filterDate') filterDate=val; else filterTeam=val; renderFilters(); renderStoreList(); }
+function setFilter(target,val){
+  if(target==='filterDate') filterDate=val;
+  else if(target==='filterGroup'){ filterGroup=val; filterTeam='전체'; }   // 조 바꾸면 팀 초기화
+  else filterTeam=val;
+  renderFilters(); renderStoreList();
+}
 
 function statusOf(v){ const r=v.report; if(!r||!r.status) return ''; return r.status; }
 
@@ -725,6 +744,7 @@ function renderStoreList(){
   const el=document.getElementById('storeList');
   const today=todayKey(), tmr=tomorrowKey();
   let vs=visits();
+  if(filterGroup!=='전체') vs=vs.filter(v=>(v.group||'')===filterGroup);
   if(filterDate==='오늘') vs=vs.filter(v=> v.dateKey===today || v.dateKey===tmr);
   else if(filterDate!=='전체') vs=vs.filter(v=>v.dateKey===filterDate);
   else if(!showPast) vs=vs.filter(v=>!isPast(v.dateKey));
@@ -770,6 +790,7 @@ function card(v, defMode){
       <span class="tag type">${esc(v.type)}</span>
       <span class="tag brand">${esc(v.brand)}</span>
       <span class="tag">${esc(v.team)}</span>
+      ${v.group?`<span class="tag" style="background:rgba(255,107,92,.14); color:var(--coral);">${esc(v.group)}</span>`:''}
     </div>
     ${v.addr?`<div class="addr">${esc(v.addr)} ${naver}</div>`:''}
   </div>`;
