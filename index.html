@@ -315,7 +315,7 @@
       <p>입력한 일정·보고 내용을 모두 지웁니다. (API 키는 유지)</p>
       <button class="btn btn-ghost btn-block" onclick="wipeData()">전체 일정 삭제</button>
     </div>
-    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616k</div>
+    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616l</div>
   </main>
 </section>
 
@@ -960,7 +960,7 @@ function reportText(){
       ? `${head}\n세팅 / 방문완료`
       : `${head}\n방문완료 인근에서 홍보활동 하겠다고 말씀드리고 대기하다가 인사드리고 철수했습니다.`;
     if(r.dayMemo && r.dayMemo.trim()) t+=`\n\n${r.dayMemo.trim()}`;
-    return t;
+    return t.replace(/\s+$/,'');
   }
   // 사전방문
   const stockLine=buildStockLine(r.stock);
@@ -970,7 +970,7 @@ function reportText(){
   if(r.env && r.env.trim()) body+=`\n\n${r.env.trim()}`;
   if(r.merit===true) body+=`\n\n세일즈 메리트 있습니다.`;
   else if(r.merit===false) body+=`\n\n세일즈 메리트 없습니다.`;
-  return body;
+  return body.replace(/\s+$/,'');
 }
 function render(){
   if(!curId) return;
