@@ -315,7 +315,7 @@
       <p>입력한 일정·보고 내용을 모두 지웁니다. (API 키는 유지)</p>
       <button class="btn btn-ghost btn-block" onclick="wipeData()">전체 일정 삭제</button>
     </div>
-    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616l</div>
+    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616m</div>
   </main>
 </section>
 
@@ -349,7 +349,7 @@
         <div class="hint">블랙·실버는 누를 때마다 1 → 2 → 0 으로 바뀝니다.</div>
       </div>
       <div class="field" id="respiField">
-        <label>리스피 안내 <span style="color:var(--txt-faint); font-weight:500;">(점포 필수 · 안내 대상)</span></label>
+        <label>리스피 안내 <span style="color:var(--txt-faint); font-weight:500;">(점포 · 다시 누르면 해제)</span></label>
         <div class="seg" style="margin-bottom:0;">
           <button id="respiOwner" class="on" onclick="setRespi('점주')">점주</button>
           <button id="respiStaff" onclick="setRespi('직원')">직원</button>
@@ -820,7 +820,7 @@ function openSheet(id, defMode){
   curId=id; const v=DATA[id]; if(!v) return;
   if(!v.report) v.report={stock:{}, respiTarget:'점주', env:'', merit:null, dayMemo:'', status:''};
   const r=v.report;
-  if(!r.respiTarget) r.respiTarget='점주';
+  if(r.respiTarget===undefined) r.respiTarget='점주';   // 최초만 기본 점주, 끈 상태(null)는 유지
   r.stock=normStock(r.stock);
   document.getElementById('edName').textContent=v.store;
   document.getElementById('edMeta').textContent=`${v.team} · ${v.brand} · ${v.type} · ${v.dateKey} ${v.dow}`;
@@ -908,9 +908,9 @@ function setMeritUI(v){
   document.getElementById('meritYes').classList.toggle('on', v===true);
   document.getElementById('meritNo').classList.toggle('on', v===false);
 }
-function setRespi(who){ DATA[curId].report.respiTarget=who; updateRespiUI(who); render(); }
+function setRespi(who){ const r=DATA[curId].report; r.respiTarget = (r.respiTarget===who)?null:who; updateRespiUI(r.respiTarget); render(); }
 function updateRespiUI(who){
-  document.getElementById('respiOwner').classList.toggle('on', who!=='직원');
+  document.getElementById('respiOwner').classList.toggle('on', who==='점주');
   document.getElementById('respiStaff').classList.toggle('on', who==='직원');
 }
 
@@ -937,7 +937,7 @@ function applyHistory(){
   if(s.merit===true||s.merit===false) r.merit=s.merit;
   if(s.respiTarget) r.respiTarget=s.respiTarget;
   renderStockOpts();
-  setMeritUI(r.merit); updateRespiUI(r.respiTarget||'점주');
+  setMeritUI(r.merit); updateRespiUI(r.respiTarget);
   document.getElementById('histHint').style.display='none';
   render(); toast('지난번 값 불러옴 · 확인 후 수정');
 }
@@ -965,7 +965,7 @@ function reportText(){
   // 사전방문
   const stockLine=buildStockLine(r.stock);
   let stock = stockLine? `재고 - ${stockLine}` : '재고 - ';
-  if(v.type==='점포'){ stock += ` / 리스피 안내 ${r.respiTarget||'점주'} v`; }
+  if(v.type==='점포' && (r.respiTarget==='점주'||r.respiTarget==='직원')){ stock += ` / 리스피 안내 ${r.respiTarget} v`; }
   let body=`${prevDateKey(v.dateKey)} 사전방문\n\n${head}\n${stock}`;
   if(r.env && r.env.trim()) body+=`\n\n${r.env.trim()}`;
   if(r.merit===true) body+=`\n\n세일즈 메리트 있습니다.`;
@@ -987,7 +987,7 @@ function finalizeReport(){
   const v=DATA[curId], r=v.report;
   const st=normStock(r.stock); const hasStock=Object.keys(st).length>0;
   if(hasStock || r.env || r.merit!==null){
-    HISTORY[histKey(v)] = { stock:JSON.parse(JSON.stringify(st)), env:r.env||'', merit:(r.merit==null?null:r.merit), respiTarget:r.respiTarget||'점주', date:v.dateKey };
+    HISTORY[histKey(v)] = { stock:JSON.parse(JSON.stringify(st)), env:r.env||'', merit:(r.merit==null?null:r.merit), respiTarget:(r.respiTarget==null?null:r.respiTarget), date:v.dateKey };
     Store.saveHistory();
   }
   Store.save();
