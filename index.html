@@ -315,7 +315,7 @@
       <p>입력한 일정·보고 내용을 모두 지웁니다. (API 키는 유지)</p>
       <button class="btn btn-ghost btn-block" onclick="wipeData()">전체 일정 삭제</button>
     </div>
-    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616m</div>
+    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616n</div>
   </main>
 </section>
 
@@ -717,7 +717,7 @@ function renderFilters(){
   const hasPast = uniq(vs.map(v=>v.dateKey)).some(isPast);
   const dc=document.getElementById('dateChips');
   dc.innerHTML='<span class="lbl">날짜</span>'+
-    `<span class="chip date ${filterDate==='오늘'?'on':''}" onclick="setFilter('filterDate','오늘')">오늘+내일</span>`+
+    `<span class="chip date ${filterDate==='오늘'?'on':''}" onclick="setFilter('filterDate','오늘')">오늘+다음</span>`+
     chip('전체',filterDate==='전체','date','filterDate')+
     dates.map(d=>chip(d, filterDate===d,'date','filterDate')).join('');
   const pb=document.getElementById('pastBtn');
@@ -744,9 +744,15 @@ function statusOf(v){ const r=v.report; if(!r||!r.status) return ''; return r.st
 
 function renderStoreList(){
   const el=document.getElementById('storeList');
-  const today=todayKey(), tmr=tomorrowKey();
-  let vs=visits();
-  if(filterGroup!=='전체') vs=vs.filter(v=>(v.group||'')===filterGroup);
+  const today=todayKey();
+  let base=visits();
+  if(filterGroup!=='전체') base=base.filter(v=>(v.group||'')===filterGroup);
+  // '내일'(사전방문) = 오늘 이후로 일정이 있는 가장 가까운 날 (주말·공휴일 건너뜀)
+  const tv=dateVal(today);
+  const futureVals=base.map(v=>dateVal(v.dateKey)).filter(x=>x>tv).sort((a,b)=>a-b);
+  const nextVal=futureVals.length?futureVals[0]:null;
+  const tmr = nextVal!=null ? base.find(v=>dateVal(v.dateKey)===nextVal).dateKey : null;
+  let vs=base;
   if(filterDate==='오늘') vs=vs.filter(v=> v.dateKey===today || v.dateKey===tmr);
   else if(filterDate!=='전체') vs=vs.filter(v=>v.dateKey===filterDate);
   else if(!showPast) vs=vs.filter(v=>!isPast(v.dateKey));
@@ -756,7 +762,7 @@ function renderStoreList(){
     return;
   }
   if(vs.length===0){
-    const msg = filterDate==='오늘' ? '오늘·내일 일정이 없어요' : '해당하는 매장이 없어요';
+    const msg = filterDate==='오늘' ? '오늘·다음 일정이 없어요' : '해당하는 매장이 없어요';
     el.innerHTML='<div class="empty"><b>'+msg+'</b>날짜·팀 필터를 바꿔보세요.</div>'; return;
   }
   // 날짜별 그룹
@@ -769,7 +775,7 @@ function renderStoreList(){
     const dow=list[0].dow||'';
     let title=`${dk} ${dow}`;
     if(dk===today) title=`오늘 · 당일보고 — ${dk} ${dow}`;
-    else if(dk===tmr) title=`내일 · 사전방문 — ${dk} ${dow}`;
+    else if(dk===tmr) title=`다음 · 사전방문 — ${dk} ${dow}`;
     html+=`<div class="daygroup-title">${title}</div>`;
     const defMode = dk===today ? 'day' : 'pre';
     list.forEach(v=>{ html+=card(v, defMode); });
