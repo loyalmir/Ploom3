@@ -315,7 +315,7 @@
       <p>입력한 일정·보고 내용을 모두 지웁니다. (API 키는 유지)</p>
       <button class="btn btn-ghost btn-block" onclick="wipeData()">전체 일정 삭제</button>
     </div>
-    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616n</div>
+    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616o</div>
   </main>
 </section>
 
@@ -450,11 +450,12 @@ function setImportMode(m){
 function todayKey(){ const d=new Date(); return (d.getMonth()+1)+'.'+d.getDate(); }
 function tomorrowKey(){ const d=new Date(); d.setDate(d.getDate()+1); return (d.getMonth()+1)+'.'+d.getDate(); }
 function dateVal(k){ const p=(k||'').split('.').map(Number); return (p[0]||0)*100+(p[1]||0); }
-function prevDateKey(k){  // 사전방문 = 행사일 하루 전
+function prevDateKey(k){  // 사전방문 = 행사일 직전 평일 (토·일은 금요일로 당김)
   const p=(k||'').split('.').map(Number);
   if(p.length<2 || !p[0]) return k;
   const d=new Date(Date.UTC(new Date().getFullYear(), p[0]-1, p[1]));
   d.setUTCDate(d.getUTCDate()-1);
+  while(d.getUTCDay()===0 || d.getUTCDay()===6) d.setUTCDate(d.getUTCDate()-1);  // 0=일,6=토 건너뜀
   return (d.getUTCMonth()+1)+'.'+d.getUTCDate();
 }
 function isPast(k){ return dateVal(k) < dateVal(todayKey()); }
