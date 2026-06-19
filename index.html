@@ -315,7 +315,7 @@
       <p>입력한 일정·보고 내용을 모두 지웁니다. (API 키는 유지)</p>
       <button class="btn btn-ghost btn-block" onclick="wipeData()">전체 일정 삭제</button>
     </div>
-    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616o</div>
+    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616p</div>
   </main>
 </section>
 
@@ -704,9 +704,9 @@ function renderFilters(){
   const grps=uniq(vsAll.map(v=>v.group).filter(Boolean)).sort();
   const gc=document.getElementById('groupChips');
   if(grps.length){
-    if(filterGroup!=='전체' && !grps.includes(filterGroup)) filterGroup='전체';
+    if(!grps.includes(filterGroup)) { filterGroup=grps[0]; filterTeam='전체'; }  // 전체 없음 → 첫 조 자동선택
     gc.style.display='flex';
-    gc.innerHTML='<span class="lbl">조</span>'+chip('전체',filterGroup==='전체','','filterGroup')+
+    gc.innerHTML='<span class="lbl">조</span>'+
       grps.map(g=>chip(g, filterGroup===g,'','filterGroup')).join('');
   } else { gc.style.display='none'; filterGroup='전체'; }
   // 조 선택 시 그 조의 일정만 기준으로 날짜·팀 칩 구성
