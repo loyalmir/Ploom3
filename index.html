@@ -321,7 +321,7 @@
       <p>입력한 일정·보고 내용을 모두 지웁니다. (API 키는 유지)</p>
       <button class="btn btn-ghost btn-block" onclick="wipeData()">전체 일정 삭제</button>
     </div>
-    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0617</div>
+    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0617b</div>
   </main>
 </section>
 
@@ -486,6 +486,15 @@ const Store = {
       try{
         if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
         this.db=firebase.database(); this.mode='cloud';
+        // Firebase가 비어있으면 로컬 데이터를 먼저 올림 (데이터 손실 방지)
+        const snap = await this.db.ref(this.path('visits')).once('value');
+        if(!snap.val()){
+          const localVisits = JSON.parse(localStorage.getItem('ploomVisits')||'null');
+          const localHistory = JSON.parse(localStorage.getItem('ploomHistory')||'null');
+          if(localVisits) await this.db.ref(this.path('visits')).set(localVisits);
+          if(localHistory) await this.db.ref(this.path('history')).set(localHistory);
+        }
+        // 실시간 리스너 연결
         this.db.ref(this.path('visits')).on('value',s=>{ DATA=s.val()||{}; renderAll(); });
         this.db.ref(this.path('history')).on('value',s=>{ HISTORY=s.val()||{}; });
         document.getElementById('syncBadge').textContent='동기화 ON · '+code;
