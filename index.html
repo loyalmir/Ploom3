@@ -6,17 +6,16 @@
 <meta name="theme-color" content="#0E1525" />
 <title>Ploom 현장 보고</title>
 
-<!-- ─────────────────────────────────────────────────────────────
-   설정 1) Firebase (선택)  — 비워두면 이 폰(브라우저)에만 저장됩니다.
-   기존 k-hary 프로젝트 그대로 붙여 넣고 path만 'ploomVisits'로 쓰면 됩니다.
-   API 키는 여기 절대 넣지 마세요. (설정 탭에서 따로 입력 → 폰에만 저장)
-─────────────────────────────────────────────────────────────── -->
+<!-- Firebase config (ploom-sync 프로젝트) -->
 <script>
   const FIREBASE_CONFIG = {
-    apiKey: "",
-    authDomain: "",
-    databaseURL: "",   // 예: https://k-hary-default-rtdb.firebaseio.com
-    projectId: ""
+    apiKey: "AIzaSyAI9nYB_bP1Hh86DsCAd4MOh1iVHC9RUTA",
+    authDomain: "ploom-sync.firebaseapp.com",
+    databaseURL: "https://ploom-sync-default-rtdb.firebaseio.com",
+    projectId: "ploom-sync",
+    storageBucket: "ploom-sync.firebasestorage.app",
+    messagingSenderId: "899333631787",
+    appId: "1:899333631787:web:66920e501aef3eaa535f6e"
   };
 </script>
 
@@ -307,15 +306,22 @@
       <div class="hint">키 발급: console.anthropic.com → API Keys → Create Key. 처음에 5~10달러만 충전하면 한참 씁니다.</div>
     </div>
     <div class="panel">
-      <h3>데이터 저장</h3>
-      <p id="storeModeText">현재 이 브라우저에만 저장 중입니다. 여러 기기에서 같이 보려면 코드 상단 FIREBASE_CONFIG에 기존 Firebase 정보를 넣으세요.</p>
+      <h3>기기 동기화 — 링크 코드</h3>
+      <p>폰과 아이패드에 같은 코드를 입력하면 일정·재고·기록이 실시간으로 연결됩니다. 코드는 영문+숫자 조합으로 원하는 걸 쓰면 돼요. (사진은 용량이 커서 각 기기에 따로 저장됩니다.)</p>
+      <div class="row" style="gap:9px;">
+        <input type="text" id="linkCodeInput" placeholder="예) PLOOM24" maxlength="20" style="flex:1; text-transform:uppercase; letter-spacing:2px; font-weight:800;" oninput="this.value=this.value.toUpperCase()">
+        <button class="btn btn-primary" onclick="saveLinkCode()">연결</button>
+      </div>
+      <div class="hint" id="linkCodeMsg"></div>
+      <div class="hint">같은 코드를 쓰는 사람은 같은 데이터를 봐요. 코드는 비밀번호처럼 아무도 모르는 걸로 쓰세요. 코드를 지우고 연결하면 로컬 저장으로 돌아옵니다.</div>
+      <p id="storeModeText" style="font-size:12.5px; color:var(--txt-dim); margin:10px 0 0;"></p>
     </div>
     <div class="panel">
       <h3>초기화</h3>
       <p>입력한 일정·보고 내용을 모두 지웁니다. (API 키는 유지)</p>
       <button class="btn btn-ghost btn-block" onclick="wipeData()">전체 일정 삭제</button>
     </div>
-    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0616p</div>
+    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0617</div>
   </main>
 </section>
 
@@ -471,32 +477,34 @@ const DEMO = `차수,구분,날짜,매장명,상태,신규/기존,요일,재고,
 
 /* ═══════════ 저장소 (Firebase 또는 localStorage) ═══════════ */
 const Store = {
-  mode:'local', db:null,
+  mode:'local', db:null, linkCode:'',
+  path(key){ return `ploomSync/${this.linkCode}/${key}`; },
   async init(){
-    if(FIREBASE_CONFIG && FIREBASE_CONFIG.databaseURL){
+    const code=(localStorage.getItem('ploomLinkCode')||'').trim().toUpperCase();
+    if(code && FIREBASE_CONFIG && FIREBASE_CONFIG.databaseURL){
+      this.linkCode=code;
       try{
-        firebase.initializeApp(FIREBASE_CONFIG);
-        this.db = firebase.database();
-        this.mode='cloud';
-        this.db.ref('ploomVisits').on('value', s=>{ DATA = s.val()||{}; renderAll(); });
-        this.db.ref('ploomHistory').on('value', s=>{ HISTORY = s.val()||{}; });
-        document.getElementById('syncBadge').textContent='클라우드 동기화';
+        if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+        this.db=firebase.database(); this.mode='cloud';
+        this.db.ref(this.path('visits')).on('value',s=>{ DATA=s.val()||{}; renderAll(); });
+        this.db.ref(this.path('history')).on('value',s=>{ HISTORY=s.val()||{}; });
+        document.getElementById('syncBadge').textContent='동기화 ON · '+code;
         document.getElementById('syncBadge').classList.add('cloud');
-        document.getElementById('storeModeText').innerHTML='<span class="ok">Firebase 동기화 켜짐.</span> 여러 기기에서 같은 일정을 봅니다.';
+        document.getElementById('storeModeText').innerHTML=`<span class="ok">링크 코드 <b>${code}</b> 로 동기화 중.</span> 같은 코드를 입력한 기기와 실시간으로 연결됩니다.`;
         return;
-      }catch(e){ console.warn('Firebase init 실패, 로컬로 진행', e); }
+      }catch(e){ console.warn('Firebase 연결 실패',e); this.mode='local'; }
     }
-    DATA = JSON.parse(localStorage.getItem('ploomVisits')||'{}');
-    HISTORY = JSON.parse(localStorage.getItem('ploomHistory')||'{}');
+    DATA=JSON.parse(localStorage.getItem('ploomVisits')||'{}');
+    HISTORY=JSON.parse(localStorage.getItem('ploomHistory')||'{}');
     renderAll();
   },
   async save(){
-    if(this.mode==='cloud'){ try{ await this.db.ref('ploomVisits').set(DATA); }catch(e){ toast('저장 실패'); } }
-    else { localStorage.setItem('ploomVisits', JSON.stringify(DATA)); renderAll(); }
+    if(this.mode==='cloud'){ try{ await this.db.ref(this.path('visits')).set(DATA); }catch(e){ toast('저장 실패'); } }
+    else{ localStorage.setItem('ploomVisits',JSON.stringify(DATA)); renderAll(); }
   },
   async saveHistory(){
-    if(this.mode==='cloud'){ try{ await this.db.ref('ploomHistory').set(HISTORY); }catch(e){} }
-    else { localStorage.setItem('ploomHistory', JSON.stringify(HISTORY)); }
+    if(this.mode==='cloud'){ try{ await this.db.ref(this.path('history')).set(HISTORY); }catch(e){} }
+    else{ localStorage.setItem('ploomHistory',JSON.stringify(HISTORY)); }
   }
 };
 
@@ -1139,6 +1147,14 @@ async function analyzePhotos(){
 }
 
 /* ═══════════ 설정 ═══════════ */
+function saveLinkCode(){
+  const code=(document.getElementById('linkCodeInput').value||'').trim().toUpperCase();
+  localStorage.setItem('ploomLinkCode', code);
+  const msg=document.getElementById('linkCodeMsg');
+  if(code){ msg.innerHTML=`<span class="ok">코드 <b>${code}</b> 저장됨 · 재연결 중…</span>`; }
+  else { msg.innerHTML='<span class="warn">코드를 지웠어요. 재연결 후 로컬 저장으로 돌아갑니다.</span>'; }
+  setTimeout(()=>location.reload(), 900);  // Firebase 재연결 위해 새로고침
+}
 function saveApiKey(){
   const k=document.getElementById('apiKey').value.trim();
   localStorage.setItem('ploomApiKey', k);
@@ -1165,6 +1181,7 @@ function toast(msg){
 window.addEventListener('DOMContentLoaded',()=>{
   const k=localStorage.getItem('ploomApiKey'); if(k) document.getElementById('apiKey').value=k;
   const m=localStorage.getItem('ploomModel'); if(m) document.getElementById('modelSel').value=m;
+  const lc=localStorage.getItem('ploomLinkCode'); if(lc) document.getElementById('linkCodeInput').value=lc;
   Photos.load();   // 3일 지난 사진 자동 정리
   Store.init();
 });
