@@ -326,7 +326,7 @@
       <p>입력한 일정·보고 내용을 모두 지웁니다. (API 키는 유지)</p>
       <button class="btn btn-ghost btn-block" onclick="wipeData()">전체 일정 삭제</button>
     </div>
-    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0617c</div>
+    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0617e</div>
   </main>
 </section>
 
@@ -1066,11 +1066,11 @@ function savePhotos(){ if(curId) Photos.set(photoKey(curId,curMode), photos.map(
 function resizeImg(src, cb){
   const img=new Image();
   img.onload=()=>{
-    const max=1000; let {width:w,height:h}=img;
+    const max=1280; let {width:w,height:h}=img;
     if(w>h && w>max){ h=h*max/w; w=max; } else if(h>=w && h>max){ w=w*max/h; h=max; }
     const c=document.createElement('canvas'); c.width=w; c.height=h;
     c.getContext('2d').drawImage(img,0,0,w,h);
-    const dataUrl=c.toDataURL('image/jpeg',0.6);
+    const dataUrl=c.toDataURL('image/jpeg',0.85);
     cb(dataUrl, dataUrl.split(',')[1]);
   };
   img.src=src;
