@@ -301,6 +301,14 @@
       <div class="hint" id="visitorMsg"></div>
     </div>
     <div class="panel">
+      <h3>당일보고</h3>
+      <p>지금 당일보고를 안 쓰면 꺼두세요. 나중에 다시 필요해지면 켜면 편집창에 다시 나타납니다.</p>
+      <div class="seg" style="margin-bottom:0;">
+        <button id="dayRepOff" onclick="setDayReportMode(false)">사용 안 함</button>
+        <button id="dayRepOn" onclick="setDayReportMode(true)">사용</button>
+      </div>
+    </div>
+    <div class="panel">
       <h3>사진 분석 (Anthropic API)</h3>
       <p>사진을 올리면 주변 환경 설명 초안을 자동으로 만들어 줍니다. 키는 이 폰에만 저장되고 어디에도 전송·업로드되지 않습니다.</p>
       <input type="password" id="apiKey" placeholder="sk-ant-... 키 붙여넣기" autocomplete="off" />
@@ -335,7 +343,7 @@
       <p>입력한 일정·보고 내용을 모두 지웁니다. (API 키는 유지)</p>
       <button class="btn btn-ghost btn-block" onclick="wipeData()">전체 일정 삭제</button>
     </div>
-    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0619</div>
+    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0619d</div>
   </main>
 </section>
 
@@ -348,7 +356,7 @@
     <div class="meta" id="edMeta">—</div>
   </div>
   <div class="sheet-body">
-    <div class="seg">
+    <div class="seg" id="modeSeg">
       <button id="segPre" class="on" onclick="setMode('pre')">사전방문</button>
       <button id="segDay" onclick="setMode('day')">당일</button>
     </div>
@@ -369,7 +377,7 @@
         <div class="hint">블랙·실버는 누를 때마다 1 → 2 → 0 으로 바뀝니다.</div>
       </div>
       <div class="field" id="respiField">
-        <label>리스피 안내 <span style="color:var(--txt-faint); font-weight:500;">(점포 · 다시 누르면 해제)</span></label>
+        <label>안내 대상 <span style="color:var(--txt-faint); font-weight:500;">(다시 누르면 해제)</span></label>
         <div class="seg" style="margin-bottom:0;">
           <button id="respiOwner" class="on" onclick="setRespi('점주')">점주</button>
           <button id="respiStaff" onclick="setRespi('직원')">직원</button>
@@ -387,7 +395,7 @@
         </div>
       </div>
       <div class="field" id="standField">
-        <label>진열장 설치여부 <span style="color:var(--txt-faint); font-weight:500;">(점포 · 다시 누르면 해제)</span></label>
+        <label>진열장 설치여부 <span style="color:var(--txt-faint); font-weight:500;">(다시 누르면 해제)</span></label>
         <div class="opts">
           <span class="opt yes" id="standYes" onclick="setStand(true)">설치</span>
           <span class="opt no" id="standNo" onclick="setStand(false)">미설치</span>
@@ -408,7 +416,7 @@
         <label class="photo-add">+<input type="file" accept="image/*" multiple hidden id="photoInput" onchange="addPhotos(event)"></label>
       </div>
       <button class="btn btn-primary btn-block" id="analyzeBtn" onclick="analyzePhotos()">사진으로 환경 설명 만들기</button>
-      <div class="hint">사진은 이 폰에 행사일+2일까지 보관되고, 아래 <b>공유하고 완료</b>를 누르면 텍스트와 함께 카톡으로 전송돼요.</div>
+      <div class="hint">사진은 이 폰에 행사일 하루까지만 보관되고(다음 날 자동 삭제), 아래 <b>공유하고 완료</b>를 누르면 원본 그대로 텍스트와 함께 카톡으로 전송돼요.</div>
     </div>
 
     <div class="preview-label"><span class="live"></span>카톡에 붙일 내용</div>
@@ -466,6 +474,15 @@ let photos = [];          // {dataUrl, b64, media}
 let filterDate = '오늘';   // '오늘'(=오늘+내일) | '전체' | 특정날짜
 let filterTeam = '전체';
 let filterGroup = '전체';
+let dayReportOn = (localStorage.getItem('ploomDayReportOn')||'0')==='1';
+function setDayReportMode(v){
+  dayReportOn=v; localStorage.setItem('ploomDayReportOn', v?'1':'0');
+  document.getElementById('dayRepOff').classList.toggle('on', !v);
+  document.getElementById('dayRepOn').classList.toggle('on', v);
+  document.getElementById('modeSeg').style.display = v?'flex':'none';
+  renderAll();
+  toast(v?'당일보고 켜짐':'당일보고 꺼짐');
+}
 let showPast = false;
 let importMode = 'replace';   // 'replace' | 'merge'
 function setImportMode(m){
@@ -539,7 +556,7 @@ const Store = {
   }
 };
 
-/* ═══════════ 사진 임시보관 (이 폰 · 행사일 + 2일까지) ═══════════ */
+/* ═══════════ 사진 임시보관 (이 폰 · 행사일까지만, 다음 날 자동 삭제) ═══════════ */
 function eventTsOf(id){
   const baseId=String(id).split('::')[0];
   const v=DATA[baseId]; if(!v||!v.dateKey) return Date.now();
@@ -573,7 +590,7 @@ const Photos = {
     return new Promise(res=>{ const req=this._os('readwrite').openCursor();
       req.onsuccess=e=>{ const cur=e.target.result; if(!cur){ res(); return; }
         const v=cur.value, ev=(v&&v.ev!=null)?v.ev:0;
-        if((ev+3*24*60*60*1000)<=now) cur.delete();
+        if((ev+1*24*60*60*1000)<=now) cur.delete();
         cur.continue();
       };
       req.onerror=res;
@@ -863,10 +880,10 @@ function renderStoreList(){
     const list=groups[dk].sort((a,b)=>teamSort(a.team,b.team));
     const dow=list[0].dow||'';
     let title=`${dk} ${dow}`;
-    if(dk===today) title=`오늘 · 당일보고 — ${dk} ${dow}`;
+    if(dayReportOn && dk===today) title=`오늘 · 당일보고 — ${dk} ${dow}`;
     else if(dk===tmr) title=`다음 · 사전방문 — ${dk} ${dow}`;
     html+=`<div class="daygroup-title">${title}</div>`;
-    const defMode = dk===today ? 'day' : 'pre';
+    const defMode = (dayReportOn && dk===today) ? 'day' : 'pre';
     list.forEach(v=>{ html+=card(v, defMode); });
   });
   el.innerHTML=html;
@@ -925,14 +942,14 @@ function openSheet(id, defMode){
   document.querySelectorAll('#stockOpts .opt').forEach(o=>{ o.onclick=()=>toggleStock(o.dataset.stock); });
   renderStockOpts();
   // 리스피·진열장: 점포만 노출
-  document.getElementById('respiField').style.display = (v.type==='점포')?'block':'none';
-  document.getElementById('standField').style.display = (v.type==='점포')?'block':'none';
+  document.getElementById('respiField').style.display = 'block';
+  document.getElementById('standField').style.display = 'block';
   updateRespiUI(r.respiTarget);
   document.getElementById('envText').value=r.env||'';
   document.getElementById('dayMemo').value=r.dayMemo||'';
   setRefillUI(r.refill); setStandUI(r.stand);
   showHistHint(v,r);
-  setMode(defMode==='day'?'day':'pre');
+  setMode((dayReportOn && defMode==='day')?'day':'pre');
   document.getElementById('sheetBg').classList.add('open');
   document.getElementById('sheet').classList.add('open');
   render();
@@ -1026,9 +1043,9 @@ function showHistHint(v,r){
   curSuggest = HISTORY[histKey(v)] || null;
   if(!curSuggest || r.status){ el.style.display='none'; return; }   // 이번 달 이미 보고했으면 숨김
   const s=curSuggest, parts=['디바이스 재고: '+fmtStock(s.stock)];
-  if(v.type==='점포' && s.respiTarget) parts.push('안내 대상: '+s.respiTarget);
+  if(s.respiTarget) parts.push('안내 대상: '+s.respiTarget);
   if(s.refill===true) parts.push('리필스틱: 보유'); else if(s.refill===false) parts.push('리필스틱: 미보유');
-  if(v.type==='점포'){ if(s.stand===true) parts.push('진열장: 설치'); else if(s.stand===false) parts.push('진열장: 미설치'); }
+  if(s.stand===true) parts.push('진열장: 설치'); else if(s.stand===false) parts.push('진열장: 미설치');
   if(s.env) parts.push('특이사항: '+s.env.split('\n')[0]+(s.env.includes('\n')?' …':''));
   document.getElementById('histLabel').textContent='지난 기록'+(s.date?(' · '+s.date):'');
   document.getElementById('histVals').textContent=parts.join('\n');
@@ -1069,7 +1086,6 @@ function reportText(){
     return t.replace(/\s+$/,'');
   }
   // 사전방문 — 체크리스트 양식
-  const isStore = v.type==='점포';
   const stockLine = buildStockLine(r.stock) || '없음';
   const respiVal = (r.respiTarget==='점주'||r.respiTarget==='직원') ? r.respiTarget : '';
   const refillVal = r.refill===true?'보유':(r.refill===false?'미보유':'');
@@ -1078,12 +1094,12 @@ function reportText(){
   lines.push(`■ ${dateLabelKR(prevDateKey(v.dateKey))}`);
   lines.push(`${v.team} 사전방문보고`);
   lines.push(`방문자 : ${getVisitorName()}`);
-  lines.push(`점포명 : ${v.brand} ${v.store} - ${v.type}`);
-  if(isStore) lines.push(`_ 안내 대상 : ${respiVal}`);
+  lines.push(`점포명 : ${v.brand} ${v.store} (${v.type})`);
+  lines.push(`_ 안내 대상 : ${respiVal}`);
   lines.push(`_ 특이사항 : ${(r.env&&r.env.trim())?r.env.trim():''}`);
   lines.push(`_ 디바이스 재고 : ${stockLine}`);
   lines.push(`_ 리필스틱 재고 : ${refillVal}`);
-  if(isStore) lines.push(`_ 진열장 설치여부 : ${standVal}`);
+  lines.push(`_ 진열장 설치여부 : ${standVal}`);
   return lines.join('\n').replace(/\s+$/,'');
 }
 function render(){
@@ -1293,7 +1309,10 @@ window.addEventListener('DOMContentLoaded',()=>{
   const m=localStorage.getItem('ploomModel'); if(m) document.getElementById('modelSel').value=m;
   const lc=localStorage.getItem('ploomLinkCode'); if(lc) document.getElementById('linkCodeInput').value=lc;
   document.getElementById('visitorInput').value=getVisitorName();
-  Photos.load();   // 3일 지난 사진 자동 정리
+  document.getElementById('dayRepOff').classList.toggle('on', !dayReportOn);
+  document.getElementById('dayRepOn').classList.toggle('on', dayReportOn);
+  document.getElementById('modeSeg').style.display = dayReportOn?'flex':'none';
+  Photos.load();   // 행사일 지나면 자동 정리
   Store.init();
 });
 </script>
