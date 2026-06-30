@@ -292,6 +292,15 @@
 <section class="view" id="view-settings">
   <main>
     <div class="panel">
+      <h3>방문자 이름</h3>
+      <p>사전방문 보고에 "방문자 :" 로 들어가는 이름입니다. 대타로 쓰는 사람은 여기서 자기 이름으로 바꿔서 쓰면 돼요.</p>
+      <div class="row" style="gap:9px;">
+        <input type="text" id="visitorInput" placeholder="예) SV 김건하" style="flex:1;">
+        <button class="btn btn-primary" onclick="saveVisitor()">저장</button>
+      </div>
+      <div class="hint" id="visitorMsg"></div>
+    </div>
+    <div class="panel">
       <h3>사진 분석 (Anthropic API)</h3>
       <p>사진을 올리면 주변 환경 설명 초안을 자동으로 만들어 줍니다. 키는 이 폰에만 저장되고 어디에도 전송·업로드되지 않습니다.</p>
       <input type="password" id="apiKey" placeholder="sk-ant-... 키 붙여넣기" autocomplete="off" />
@@ -326,7 +335,7 @@
       <p>입력한 일정·보고 내용을 모두 지웁니다. (API 키는 유지)</p>
       <button class="btn btn-ghost btn-block" onclick="wipeData()">전체 일정 삭제</button>
     </div>
-    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0618</div>
+    <div style="text-align:center; color:var(--txt-faint); font-size:11px; padding:6px 0 10px;" class="mono">ploom-report · build 0619</div>
   </main>
 </section>
 
@@ -367,14 +376,21 @@
         </div>
       </div>
       <div class="field">
-        <label>환경 설명 <span style="color:var(--txt-faint); font-weight:500;">(AI 초안 · 직접 수정 가능)</span></label>
+        <label>환경 설명 <span style="color:var(--txt-faint); font-weight:500;">(AI 초안 · 직접 수정 가능 · 특이사항에 들어감)</span></label>
         <textarea id="envText" placeholder="예) 인근 주택 상가 복합지역입니다.&#10;유동인구 많습니다.&#10;흡연구역 따로 없습니다." oninput="render()"></textarea>
       </div>
       <div class="field">
-        <label>세일즈 메리트</label>
+        <label>리필스틱 재고 <span style="color:var(--txt-faint); font-weight:500;">(다시 누르면 해제)</span></label>
         <div class="opts">
-          <span class="opt yes" id="meritYes" onclick="setMerit(true)">있습니다</span>
-          <span class="opt no" id="meritNo" onclick="setMerit(false)">없습니다</span>
+          <span class="opt yes" id="refillYes" onclick="setRefill(true)">보유</span>
+          <span class="opt no" id="refillNo" onclick="setRefill(false)">미보유</span>
+        </div>
+      </div>
+      <div class="field" id="standField">
+        <label>진열장 설치여부 <span style="color:var(--txt-faint); font-weight:500;">(점포 · 다시 누르면 해제)</span></label>
+        <div class="opts">
+          <span class="opt yes" id="standYes" onclick="setStand(true)">설치</span>
+          <span class="opt no" id="standNo" onclick="setStand(false)">미설치</span>
         </div>
       </div>
     </div>
@@ -469,6 +485,7 @@ function prevDateKey(k){  // 사전방문 = 행사일 직전 평일 (토·일은
   while(d.getUTCDay()===0 || d.getUTCDay()===6) d.setUTCDate(d.getUTCDate()-1);  // 0=일,6=토 건너뜀
   return (d.getUTCMonth()+1)+'.'+d.getUTCDate();
 }
+function dateLabelKR(k){ const p=(k||'').split('.').map(Number); return p.length<2?k:`${p[0]}월 ${p[1]}일`; }
 function isPast(k){ return dateVal(k) < dateVal(todayKey()); }
 
 const DEMO = `차수,구분,날짜,매장명,상태,신규/기존,요일,재고,점주,주소,지역,코드,팀,편의점
@@ -896,21 +913,24 @@ function esc(s){ return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>'
 /* ═══════════ 편집 시트 ═══════════ */
 function openSheet(id, defMode){
   curId=id; const v=DATA[id]; if(!v) return;
-  if(!v.report) v.report={stock:{}, respiTarget:'점주', env:'', merit:null, dayMemo:'', status:''};
+  if(!v.report) v.report={stock:{}, respiTarget:'점주', env:'', merit:null, refill:null, stand:null, dayMemo:'', status:''};
   const r=v.report;
   if(r.respiTarget===undefined) r.respiTarget='점주';   // 최초만 기본 점주, 끈 상태(null)는 유지
+  if(r.refill===undefined) r.refill=null;
+  if(r.stand===undefined) r.stand=null;
   r.stock=normStock(r.stock);
   document.getElementById('edName').textContent=v.store;
   document.getElementById('edMeta').textContent=`${v.team} · ${v.brand} · ${v.type} · ${v.dateKey} ${v.dow}`;
   // 재고
   document.querySelectorAll('#stockOpts .opt').forEach(o=>{ o.onclick=()=>toggleStock(o.dataset.stock); });
   renderStockOpts();
-  // 리스피: 점포만 노출
+  // 리스피·진열장: 점포만 노출
   document.getElementById('respiField').style.display = (v.type==='점포')?'block':'none';
+  document.getElementById('standField').style.display = (v.type==='점포')?'block':'none';
   updateRespiUI(r.respiTarget);
   document.getElementById('envText').value=r.env||'';
   document.getElementById('dayMemo').value=r.dayMemo||'';
-  setMeritUI(r.merit);
+  setRefillUI(r.refill); setStandUI(r.stand);
   showHistHint(v,r);
   setMode(defMode==='day'?'day':'pre');
   document.getElementById('sheetBg').classList.add('open');
@@ -982,10 +1002,15 @@ function renderStockOpts(){
     else { const c=r.stock[k]||0; o.classList.toggle('on', c>0); o.textContent = c>0 ? (k+' '+c) : k; }
   });
 }
-function setMerit(v){ const r=DATA[curId].report; r.merit = (r.merit===v)?null:v; setMeritUI(r.merit); render(); }
-function setMeritUI(v){
-  document.getElementById('meritYes').classList.toggle('on', v===true);
-  document.getElementById('meritNo').classList.toggle('on', v===false);
+function setRefill(v){ const r=DATA[curId].report; r.refill = (r.refill===v)?null:v; setRefillUI(r.refill); render(); }
+function setRefillUI(v){
+  document.getElementById('refillYes').classList.toggle('on', v===true);
+  document.getElementById('refillNo').classList.toggle('on', v===false);
+}
+function setStand(v){ const r=DATA[curId].report; r.stand = (r.stand===v)?null:v; setStandUI(r.stand); render(); }
+function setStandUI(v){
+  document.getElementById('standYes').classList.toggle('on', v===true);
+  document.getElementById('standNo').classList.toggle('on', v===false);
 }
 function setRespi(who){ const r=DATA[curId].report; r.respiTarget = (r.respiTarget===who)?null:who; updateRespiUI(r.respiTarget); render(); }
 function updateRespiUI(who){
@@ -1000,10 +1025,11 @@ function showHistHint(v,r){
   const el=document.getElementById('histHint');
   curSuggest = HISTORY[histKey(v)] || null;
   if(!curSuggest || r.status){ el.style.display='none'; return; }   // 이번 달 이미 보고했으면 숨김
-  const s=curSuggest, parts=['재고: '+fmtStock(s.stock)];
-  if(v.type==='점포' && s.respiTarget) parts.push('리스피: '+s.respiTarget);
-  if(s.merit===true) parts.push('메리트: 있음'); else if(s.merit===false) parts.push('메리트: 없음');
-  if(s.env) parts.push('설명: '+s.env.split('\n')[0]+(s.env.includes('\n')?' …':''));
+  const s=curSuggest, parts=['디바이스 재고: '+fmtStock(s.stock)];
+  if(v.type==='점포' && s.respiTarget) parts.push('안내 대상: '+s.respiTarget);
+  if(s.refill===true) parts.push('리필스틱: 보유'); else if(s.refill===false) parts.push('리필스틱: 미보유');
+  if(v.type==='점포'){ if(s.stand===true) parts.push('진열장: 설치'); else if(s.stand===false) parts.push('진열장: 미설치'); }
+  if(s.env) parts.push('특이사항: '+s.env.split('\n')[0]+(s.env.includes('\n')?' …':''));
   document.getElementById('histLabel').textContent='지난 기록'+(s.date?(' · '+s.date):'');
   document.getElementById('histVals').textContent=parts.join('\n');
   el.style.display='block';
@@ -1013,10 +1039,11 @@ function applyHistory(){
   const r=DATA[curId].report, s=curSuggest;
   if(s.stock) r.stock=JSON.parse(JSON.stringify(normStock(s.stock)));
   if(s.env){ r.env=s.env; document.getElementById('envText').value=s.env; }
-  if(s.merit===true||s.merit===false) r.merit=s.merit;
+  if(s.refill===true||s.refill===false) r.refill=s.refill;
+  if(s.stand===true||s.stand===false) r.stand=s.stand;
   if(s.respiTarget) r.respiTarget=s.respiTarget;
   renderStockOpts();
-  setMeritUI(r.merit); updateRespiUI(r.respiTarget);
+  setRefillUI(r.refill); setStandUI(r.stand); updateRespiUI(r.respiTarget);
   document.getElementById('histHint').style.display='none';
   render(); toast('지난번 값 불러옴 · 확인 후 수정');
 }
@@ -1027,7 +1054,7 @@ function buildStockLine(stock){
   if(stock.none) return '없음';
   const parts=[];
   ['블랙','실버'].forEach(k=>{ if(stock[k]>0) parts.push(k+stock[k]); });
-  return parts.join(', ');
+  return parts.join(' ');
 }
 function reportText(){
   const v=DATA[curId]; if(!v) return '';
@@ -1041,15 +1068,23 @@ function reportText(){
     if(r.dayMemo && r.dayMemo.trim()) t+=`\n\n${r.dayMemo.trim()}`;
     return t.replace(/\s+$/,'');
   }
-  // 사전방문
-  const stockLine=buildStockLine(r.stock);
-  let stock = stockLine? `재고 - ${stockLine}` : '재고 - ';
-  if(v.type==='점포' && (r.respiTarget==='점주'||r.respiTarget==='직원')){ stock += ` / 리스피 안내 ${r.respiTarget} v`; }
-  let body=`${prevDateKey(v.dateKey)} 사전방문\n\n${head}\n${stock}`;
-  if(r.env && r.env.trim()) body+=`\n\n${r.env.trim()}`;
-  if(r.merit===true) body+=`\n\n세일즈 메리트 있습니다.`;
-  else if(r.merit===false) body+=`\n\n세일즈 메리트 없습니다.`;
-  return body.replace(/\s+$/,'');
+  // 사전방문 — 체크리스트 양식
+  const isStore = v.type==='점포';
+  const stockLine = buildStockLine(r.stock) || '없음';
+  const respiVal = (r.respiTarget==='점주'||r.respiTarget==='직원') ? r.respiTarget : '';
+  const refillVal = r.refill===true?'보유':(r.refill===false?'미보유':'');
+  const standVal = r.stand===true?'설치':(r.stand===false?'미설치':'');
+  const lines=[];
+  lines.push(`■ ${dateLabelKR(prevDateKey(v.dateKey))}`);
+  lines.push(`${v.team} 사전방문보고`);
+  lines.push(`방문자 : ${getVisitorName()}`);
+  lines.push(`점포명 : ${v.brand} ${v.store} - ${v.type}`);
+  if(isStore) lines.push(`_ 안내 대상 : ${respiVal}`);
+  lines.push(`_ 특이사항 : ${(r.env&&r.env.trim())?r.env.trim():''}`);
+  lines.push(`_ 디바이스 재고 : ${stockLine}`);
+  lines.push(`_ 리필스틱 재고 : ${refillVal}`);
+  if(isStore) lines.push(`_ 진열장 설치여부 : ${standVal}`);
+  return lines.join('\n').replace(/\s+$/,'');
 }
 function render(){
   if(!curId) return;
@@ -1065,8 +1100,8 @@ function finalizeReport(){
   DATA[curId].report.status = curMode==='day'?'당일완료':'사전완료';
   const v=DATA[curId], r=v.report;
   const st=normStock(r.stock); const hasStock=Object.keys(st).length>0;
-  if(hasStock || r.env || r.merit!==null){
-    HISTORY[histKey(v)] = { stock:JSON.parse(JSON.stringify(st)), env:r.env||'', merit:(r.merit==null?null:r.merit), respiTarget:(r.respiTarget==null?null:r.respiTarget), date:v.dateKey };
+  if(hasStock || r.env || r.refill!==null || r.stand!==null){
+    HISTORY[histKey(v)] = { stock:JSON.parse(JSON.stringify(st)), env:r.env||'', refill:(r.refill==null?null:r.refill), stand:(r.stand==null?null:r.stand), respiTarget:(r.respiTarget==null?null:r.respiTarget), date:v.dateKey };
     Store.saveHistory();
   }
   Store.save();
@@ -1181,14 +1216,13 @@ async function analyzePhotos(){
   const btn=document.getElementById('analyzeBtn');
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> 분석 중…';
   const model=localStorage.getItem('ploomModel')||'claude-sonnet-4-6';
-  const sys=`너는 담배 브랜드 Ploom의 편의점 현장 홍보 담당자다. 첨부된 매장/거리 사진을 보고, 사전방문 보고용 '주변 환경 설명' 초안을 한국어로 작성한다.
+  const sys=`너는 담배 브랜드 Ploom의 편의점 현장 홍보 담당자다. 첨부된 매장/거리 사진을 보고, 사전방문 보고용 '특이사항' 초안을 한국어로 작성한다.
 규칙:
 - 사진에서 실제로 보이는 것만 근거로 판단. 추측은 자연스러운 범위로만.
 - 항목: 주변이 주택가/상가/복합지역 중 무엇인지, 유동인구 체감(많음/보통/적음), 흡연구역이 따로 보이는지, 금연구역 단서가 있는지.
 - 문장은 짧고 담백하게, 각 줄 끝 '~습니다'체. 3~4줄.
-- 마지막으로 세일즈 메리트 유무를 판단(있음/없음)하고 한 줄 이유.
 반드시 아래 JSON만 출력. 다른 말 금지:
-{"env":"여러 줄 설명(\\n 으로 줄바꿈)","merit":"있음" 또는 "없음","reason":"한 줄"}`;
+{"env":"여러 줄 설명(\\n 으로 줄바꿈)"}`;
   const content=[{type:'text', text:`매장명 ${v.store} (${v.brand}, ${v.type}). 사진을 보고 작성해줘.`}];
   await Promise.all(photos.map(p=>new Promise(res=>{
     const reader=new FileReader();
@@ -1206,8 +1240,6 @@ async function analyzePhotos(){
     const txt=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('').replace(/```json|```/g,'').trim();
     let parsed; try{ parsed=JSON.parse(txt); }catch(e){ parsed={env:txt}; }
     document.getElementById('envText').value=parsed.env||txt;
-    if(parsed.merit==='있음') setMerit(true);
-    else if(parsed.merit==='없음') setMerit(false);
     render();
     toast('초안 완성 · 확인 후 수정하세요');
   }catch(e){
@@ -1224,6 +1256,13 @@ function saveLinkCode(){
   if(code){ msg.innerHTML=`<span class="ok">코드 <b>${code}</b> 저장됨 · 재연결 중…</span>`; }
   else { msg.innerHTML='<span class="warn">코드를 지웠어요. 재연결 후 로컬 저장으로 돌아갑니다.</span>'; }
   setTimeout(()=>location.reload(), 900);  // Firebase 재연결 위해 새로고침
+}
+function getVisitorName(){ return localStorage.getItem('ploomVisitor') || 'SV 김건하'; }
+function saveVisitor(){
+  const v=(document.getElementById('visitorInput').value||'').trim();
+  localStorage.setItem('ploomVisitor', v || 'SV 김건하');
+  document.getElementById('visitorMsg').innerHTML='<span class="ok">저장됨 · '+getVisitorName()+'</span>';
+  toast('저장됨');
 }
 function saveApiKey(){
   const k=document.getElementById('apiKey').value.trim();
@@ -1253,6 +1292,7 @@ window.addEventListener('DOMContentLoaded',()=>{
   const k=localStorage.getItem('ploomApiKey'); if(k) document.getElementById('apiKey').value=k;
   const m=localStorage.getItem('ploomModel'); if(m) document.getElementById('modelSel').value=m;
   const lc=localStorage.getItem('ploomLinkCode'); if(lc) document.getElementById('linkCodeInput').value=lc;
+  document.getElementById('visitorInput').value=getVisitorName();
   Photos.load();   // 3일 지난 사진 자동 정리
   Store.init();
 });
